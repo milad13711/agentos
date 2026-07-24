@@ -1,0 +1,207 @@
+# فاز ۱ — پیش‌نویس: Event Schema + مدل Agent-as-Role
+
+**وضعیت: پیش‌نویس، هیچ کدی هنوز تغییر نکرده.** این سند برای تأیید قبل از هر ریفکتوریه.
+
+## هدف
+
+بدهی فنی بند ۵ در CLAUDE.md رو ریشه‌ای حل کنیم: `create_contact`/`create_deal` (و در واقع تقریباً هر اکشن نویسا) الان **دقیقاً دوبار** پیاده‌سازی شده —
+- یک‌بار در `server.js` (مسیر REST مستقیم، مثلاً `POST /api/contacts`)
+- یک‌بار در `agent.js` → `executeAction()` (مسیر Agent)
+
+هر دو مسیر SQL خودشون رو می‌نویسن، `audit()` رو جدا صدا می‌زنن، و منطق‌شون می‌تونه به‌مرور از هم جدا بیفته (باگ کلاسیک: یه قانون کسب‌وکار توی یکی اصلاح می‌شه، توی اون یکی یادت می‌ره).
+
+راه‌حل پیشنهادی دو تکه‌ست که به هم وابسته‌ن:
+1. **Event Schema** — یک نقطه‌ی واحد نوشتن (Action Registry) + یک جدول `events` که هم تاریخچه/audit رو یکپارچه می‌کنه، هم Approval Gate رو عمومی می‌کنه.
+2. **Agent-as-Role** — به‌جای اینکه «Agent» یک رشته‌ی هاردکد (`actor_type = 'agent'`) و یک ستون شخصی‌سازی روی `users` باشه، به‌عنوان یک **نقش** در همون سیستم RBAC که از قبل نصفه‌کاره (owner/admin/member) وجود داره مدل بشه.
+
+این طرح **event sourcing کامل نیست** — عمداً. state همچنان توی جدول‌های عادی (`contacts`, `deals`, ...) می‌مونه؛ `events` فقط تنها دروازه‌ی نوشتن و یک لاگ ضمیمه‌شونده (append-mostly) هست. برای یک بک‌اند بدون‌dependency و به این اندازه، event sourcing کامل بیش از حد لازمه.
+
+## چیزی که الان واقعاً هست (خلاصه‌ی بررسی کد)
+
+- `db.js`: جدول `audit_logs` (actor_type: `user`|`agent`, actor_id, action, entity, detail_json) — فقط لاگ، هیچ‌جا خونده نمی‌شه به‌جز نمایش (`/api/audit`, `/api/admin/audit`, KPI‌های Super Admin).
+- `db.js`: جدول `pending_actions` (action, domain, params_json, status: pending/approved/rejected) — صف Approval Gate، مجزا از audit_logs.
+- `agent.js`: `SENSITIVE_ACTIONS` یک `Set` هاردکد از نام اکشن‌هاست که تعیین می‌کنه چی باید بره صف approval — این قانون **فقط برای مسیر Agent** اعمال می‌شه؛ اگه یوزر مستقیم از `DELETE /api/deals/:id` بزنه، هیچ Approval Gate ای نیست (چون یوزر مستقیم صداش می‌زنه، نه از طریق `pending_actions`).
+- نقش‌ها الان واقعاً `owner` | `admin` | `member` هستن (نه فقط owner/member که README می‌گه — `requireRole` توی `server.js` هر سه رو چک می‌کنه). Agent هیچ نقشی نداره؛ فقط یک رشته‌ی `actor_type='agent'` در audit، و `agent_name`/`agent_persona` روی خود کاربر انسانی که ازش استفاده می‌کنه.
+
+## بخش ۱: Event Schema
+
+### جدول جدید `events`
+
+```sql
+CREATE TABLE events (
+  id            TEXT PRIMARY KEY,
+  tenant_id     TEXT NOT NULL,
+  type          TEXT NOT NULL,        -- 'contact.created', 'deal.stage_changed', 'invoice.issued', ...
+  actor_type    TEXT NOT NULL,        -- 'user' | 'agent' | 'system'
+  actor_id      TEXT,                 -- users.id — همیشه انسانی که مسئوله (حتی وقتی actor_type='agent')
+  actor_role    TEXT NOT NULL,        -- 'owner' | 'admin' | 'member' | 'agent'
+  entity_type   TEXT,                 -- 'contact' | 'deal' | 'invoice' | 'module' | 'task' | ...
+  entity_id     TEXT,
+  payload_json  TEXT NOT NULL,        -- همون params فعلی (شکل هر type مشخص و مستنده)
+  status        TEXT NOT NULL DEFAULT 'applied', -- 'applied' | 'pending_approval' | 'rejected'
+  created_at    INTEGER NOT NULL,
+  resolved_at   INTEGER              -- فقط برای status pending_approval → applied/rejected
+);
+CREATE INDEX idx_events_tenant ON events(tenant_id);
+CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
+CREATE INDEX idx_events_status ON events(status);
+```
+
+نکته کلیدی: `actor_id` **همیشه** `users.id` انسان مسئوله — حتی وقتی `actor_type = 'agent'`. یعنی «Agent» عاملی نیست که خودش هویت مستقل داشته باشه؛ نماینده‌ی یک کاربر مشخصه، با یک نقش (role) متفاوت از نقش عادی همون کاربر. این دقیقاً همون چیزیه که بخش ۲ (Agent-as-Role) توضیح می‌ده.
+
+### تصمیم معماری: `pending_actions` ادغام می‌شه در `events`
+
+به‌جای دو جدول جدا (`audit_logs` برای تاریخچه + `pending_actions` برای صف تایید)، هر دو در `events` یکی می‌شن:
+- اکشنی که نیاز به تایید نداره → یک ردیف با `status='applied'` مستقیم ثبت می‌شه (همون لحظه اجرا هم می‌شه).
+- اکشن حساس → یک ردیف با `status='pending_approval'` ثبت می‌شه (چیزی اجرا نمی‌شه). با approve/reject، همون ردیف به `applied`/`rejected` آپدیت می‌شه (`resolved_at` ست می‌شه).
+
+این یعنی `events` جای هر دو جدول `audit_logs` و `pending_actions` رو می‌گیره. `audit_logs` رو می‌شه بعداً حذف کرد یا برای سازگاری موقت به‌عنوان یک VIEW روی `events` نگه داشت (چون `/api/audit`, `/api/admin/audit`, و KPI‌های Super Admin الان مستقیم ازش می‌خونن).
+
+**سوال بازی که نیاز به تأیید شما داره:** آیا مهاجرت دیتای موجود (audit_logs + pending_actions قدیمی) به events لازمه، یا چون این محیط production واقعی داره و داده‌ی تاریخی زیاد مهم نیست، از یک نقطه به بعد فقط events جدید نوشته بشه و جدول‌های قدیمی برای خواندن تاریخچه‌ی قبلی (read-only) بمونن؟ پیشنهاد من: گزینه‌ی دوم (ساده‌تر، بدون ریسک migration روی دیتابیس زنده‌ی سرور).
+
+### الگوی نوشتن: یک Action Registry به‌جای دو پیاده‌سازی
+
+هسته‌ی رفع بدهی فنی همینجاست. یک فایل جدید (مثلاً `src/actions.js`) جایگزین بخش `switch(action)` توی `agent.js` می‌شه، و **هم `server.js` هم `agent.js` از همینجا صدا می‌زنن**:
+
+```js
+// src/actions.js — تنها جایی که واقعاً به دیتابیس می‌نویسه
+const registry = {
+  create_contact: {
+    domain: 'sales',
+    sensitive: false,
+    entityType: 'contact',
+    apply(tenantId, params) {
+      // همون منطق فعلی create_contact — یک‌بار، نه دوبار
+    },
+  },
+  delete_deal: {
+    domain: 'sales',
+    sensitive: true,
+    entityType: 'deal',
+    apply(tenantId, params) { /* ... */ },
+  },
+  // ... بقیه‌ی اکشن‌های فعلی، عیناً از agent.js کپی می‌شن (منطق تغییر نمی‌کنه، فقط محل واحد می‌شه)
+};
+
+// نقطه‌ی ورود واحد — همه (هم server.js هم agent.js) از همینجا صدا می‌زنن
+function dispatch(actor, type, params) {
+  const def = registry[type];
+  if (!def) throw new Error('unknown_action:' + type);
+
+  const requiresApproval = def.sensitive && actor.role !== 'owner_override'; // جزئیات دقیق‌تر در بخش ۲
+  const eventId = insertEvent(actor, type, def, params, requiresApproval ? 'pending_approval' : 'applied');
+
+  if (requiresApproval) return { requiresApproval: true, eventId };
+  const result = def.apply(actor.tenantId, params);
+  return { requiresApproval: false, eventId, result };
+}
+```
+
+- `server.js` برای `POST /api/contacts` می‌شه: `dispatch({type:'user', id:auth.userId, role:auth.role, tenantId:auth.tenantId}, 'create_contact', {name, phone})`
+- `agent.js` برای همون اکشن (وقتی Agent تشخیص می‌ده) می‌شه: `dispatch({type:'agent', id:userId, role:'agent', tenantId}, 'create_contact', params)`
+
+منطق SQL واقعی (`def.apply`) **یک‌بار** نوشته می‌شه. این دقیقاً بدهی فنی بند ۵ رو می‌بنده.
+
+### Event Types نسخه ۱ (معادل مستقیم اکشن‌های فعلی — چیز جدیدی اضافه نمی‌شه)
+
+هر `action` فعلی توی `DOMAIN_OF` (در `agent.js`) یک `type` معادل می‌گیره، با کانونشن `entity.verb`:
+
+| اکشن فعلی | type پیشنهادی | حساس؟ |
+|---|---|---|
+| create_contact | `contact.created` | خیر |
+| delete_contact | `contact.deleted` | بله |
+| create_deal | `deal.created` | خیر |
+| update_deal_stage | `deal.stage_changed` | خیر |
+| delete_deal | `deal.deleted` | بله |
+| issue_invoice | `invoice.issued` | بله |
+| build_module | `module.created` | بله |
+| delete_module | `module.deleted` | بله |
+| publish_module | `marketplace.published` | بله |
+| install_module | `module.installed` | بله |
+| create_task | `task.created` | خیر |
+| delegate_task | `task.delegated` | خیر |
+| generate_report | `report.generated` | خیر |
+| ... | ... | ... |
+
+(لیست کامل معادل همون چیزیه که الان در `SENSITIVE_ACTIONS` و `DOMAIN_OF` در `agent.js` هست — چیزی کم/زیاد نمی‌شه، فقط نام‌گذاری یکدست‌تر می‌شه.)
+
+---
+
+## بخش ۲: مدل Agent-as-Role
+
+### مشکل فعلی
+
+«Agent» الان سه جای مختلف، سه شکل مختلف نمایش داده می‌شه:
+1. در `audit_logs.actor_type`: یک رشته‌ی هاردکد `'agent'` در برابر `'user'`.
+2. در `users` table: `agent_name` و `agent_persona` — شخصی‌سازی *لحن* Agent، نه یک هویت یا نقش.
+3. در `agent.js`: `SENSITIVE_ACTIONS` یک Set هاردکد که تعیین می‌کنه Agent چه‌کاری بدون تایید نمی‌تونه انجام بده — ولی این قانون فقط وقتی اعمال می‌شه که مسیر اجرا از `agent.js` بیاد. RBAC انسانی (`owner`/`admin`/`member`) کاملاً جدا و بی‌ربط به این تعریفه.
+
+نتیجه: دو سیستم مجوز موازی و ناهماهنگ داریم — یکی برای انسان‌ها (role-based، توی `requireRole`)، یکی برای Agent (action-name-based، توی `SENSITIVE_ACTIONS`). این دقیقاً همون چیزیه که README به‌عنوان «RBAC واقعی نداریم، Permission Matrix نداریم» اشاره کرده.
+
+### مدل پیشنهادی: Agent یک Role است، نه یک Actor Type جدا
+
+به‌جای `actor_type: 'user' | 'agent'` به‌عنوان یک بعد جدا از role، پیشنهاد اینه که **Agent یکی از مقادیر همون ستون role باشه**:
+
+```
+نقش‌های ممکن یک actor: owner | admin | member | agent
+```
+
+هر actor (چه یک request مستقیم از کاربر لاگین‌شده، چه یک اکشنی که از داخل `agent.js` می‌آد) قبل از رسیدن به `dispatch()` یک شیء استاندارد می‌سازه:
+
+```ts
+type Actor = {
+  tenantId: string;
+  userId: string;   // انسانی که مسئول نهاییه — همیشه پر است، حتی برای role='agent'
+  role: 'owner' | 'admin' | 'member' | 'agent';
+};
+```
+
+وقتی یک کاربر با `agent.js` صحبت می‌کنه، actor ساخته‌شده `{ tenantId, userId, role: 'agent' }` است — **نه** `role` واقعی اون کاربر (owner/admin/member). یعنی «داره از طرف این کاربر، ولی با محدودیت‌های نقش Agent، عمل می‌کنه» — دقیقاً مثل sudo با یک پروفایل محدودتر، نه نامحدودتر.
+
+### Capability Matrix (جایگزین `SENSITIVE_ACTIONS` هاردکد + `requireRole` پراکنده)
+
+یک جدول واحد (فعلاً به‌صورت یک شیء ثابت در کد، **نه** جدول دیتابیس جدا — چون over-engineering برای این مرحله‌ست؛ اگه بعداً نیاز به تنظیم پویا از Super Admin شد، می‌شه بردش توی دیتابیس):
+
+```js
+// src/roles.js
+const ROLES = {
+  owner:  { canDispatchAll: true },
+  admin:  { deny: ['tenant.delete'] },
+  member: { deny: ['*.deleted', 'invoice.*', 'marketplace.*', 'module.*'] },
+  agent:  { requiresApproval: [
+    'invoice.issued', 'deal.deleted', 'contact.deleted',
+    'module.created', 'module.deleted', 'marketplace.published', 'module.installed',
+  ] },
+};
+```
+
+این دقیقاً همون لیست فعلی `SENSITIVE_ACTIONS` است — چیزی رفتاری عوض نمی‌شه، فقط محل تعریفش از یک `Set` گمشده وسط `agent.js` به یک جدول صریح و قابل‌گسترش برای همه‌ی نقش‌ها منتقل می‌شه.
+
+### چرا این مهمه (نه فقط تمیزکاری)
+
+1. **رفع بدهی فنی بند ۵**: چون `dispatch()` یکیه و actor.role رو می‌گیره، دیگه لازم نیست `server.js` و `agent.js` جدا جدا تصمیم بگیرن این اکشن حساسه یا نه.
+2. **پایه برای RBAC واقعی** (فاز بعدی روی لیست تکنیکال دبت README): وقتی Agent هم یک role است، اضافه‌کردن یک role محدودتر مثل `agent:readonly` (مثلاً برای پلن‌های پایین‌تر که فقط اجازه‌ی report/list دارن) فقط یعنی یک ردیف جدید در `ROLES`، نه کد جدید.
+3. **مسیر باز برای چند-Agent در آینده** (خارج از اسکوپ فاز ۱، فقط اشاره): اگه یک روز خواستید Agent مخصوص یک نقش محدودتر (مثلاً فقط دامنه `finance`) داشته باشید، مدل از قبل جواب می‌ده — چون role چیزیه که با domain/capability تعریف می‌شه، نه یک flag دودویی.
+
+### چیزی که این مدل *تغییر نمی‌ده*
+
+- `agent_name` و `agent_persona` دست‌نخورده می‌مونن — اینا شخصی‌سازی لحن System Prompت هستن، نه بخشی از سیستم مجوز. کاملاً orthogonal به Agent-as-Role.
+- رفتار فعلی approval gate از دید کاربر نهایی عوض نمی‌شه — همون اکشن‌هایی که الان نیاز به تایید دارن، دقیقاً همونا می‌مونن.
+
+---
+
+## چک‌لیست پیاده‌سازی (بعد از تأیید شما)
+
+- [ ] جدول `events` به `db.js` اضافه بشه (کنار جدول‌های فعلی، بدون حذف چیزی)
+- [ ] `src/actions.js` ساخته بشه: منطق `switch(action)` از `agent.js` به اینجا منتقل بشه (کپی، نه بازنویسی رفتار)
+- [ ] `src/roles.js` ساخته بشه با `ROLES` بالا (معادل دقیق `SENSITIVE_ACTIONS` فعلی)
+- [ ] `agent.js` بازنویسی بشه تا فقط System Prompt + parse کنه، و اجرا رو به `dispatch()` بسپاره
+- [ ] `server.js` هندلرهای REST (`POST /api/contacts` و مشابه) به `dispatch()` وصل بشن به‌جای SQL مستقیم
+- [ ] `/api/audit` و `/api/admin/audit` و KPI‌های Super Admin به `events` وصل بشن (یا `audit_logs` به‌صورت VIEW نگه داشته بشه — بسته به تصمیم بالا)
+- [ ] تست دستی: هر اکشن هم از REST هم از Agent، نتیجه و رفتار Approval Gate یکسان باشه
+
+## سوالات باز که قبل از شروع پیاده‌سازی نیاز به تأیید شما دارن
+
+1. مهاجرت دیتای تاریخی `audit_logs`/`pending_actions` به `events`، یا فقط از این به بعد `events` نوشته بشه و قدیمی‌ها read-only بمونن؟ (پیشنهاد من: گزینه‌ی دوم)
+2. `audit_logs` کامل حذف بشه بعد از انتقال، یا به‌صورت VIEW روی `events` نگه داشته بشه برای سازگاری با کوئری‌های فعلی Admin Dashboard؟
+3. آیا با ترتیب چک‌لیست بالا موافقید، یا ترجیح می‌دید اول فقط `events` + `dispatch()` برای یکی دو اکشن (مثلاً همون create_contact/create_deal که در CLAUDE.md به‌عنوان نمونه اومده) پیاده بشه و تست بشه، قبل از اینکه همه‌ی اکشن‌ها رو منتقل کنیم؟
