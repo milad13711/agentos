@@ -247,12 +247,9 @@ route('POST', '/api/tasks', async (req, res) => {
     const assignee = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(assigneeId, auth.tenantId);
     if (!assignee) return send(res, 400, { error: 'invalid_assignee' });
   }
-  const id = uid(); const t = now();
-  db.prepare(`INSERT INTO tasks (id, tenant_id, title, description, assignee_id, created_by, related_entity, due_at, status, created_at, updated_at)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, auth.tenantId, title, description || '', assigneeId || auth.userId, auth.userId, relatedEntity || null, dueAt || null, 'open', t, t);
-  audit(auth.tenantId, 'user', auth.userId, 'create_task', 'task:' + id, { title, assigneeId });
-  send(res, 201, db.prepare('SELECT * FROM tasks WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'task.created', { title, description, assigneeId, dueAt, relatedEntity });
+  audit(auth.tenantId, 'user', auth.userId, 'create_task', 'task:' + data.id, { title, assigneeId });
+  send(res, 201, data);
 });
 
 route('PATCH', '/api/tasks/:id', async (req, res, params) => {
@@ -309,20 +306,17 @@ route('POST', '/api/deals', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { title, contactName, amount, stage } = await readBody(req);
   if (!title) return send(res, 400, { error: 'title_required' });
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO deals (id, tenant_id, title, contact_name, amount, stage, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(id, auth.tenantId, title, contactName || '', amount != null ? Number(amount) : null, stage || 'سرنخ', auth.userId, t, t);
-  audit(auth.tenantId, 'user', auth.userId, 'create_deal', 'deal:' + id, { title });
-  send(res, 201, db.prepare('SELECT * FROM deals WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.created', { title, contactName, amount, stage });
+  audit(auth.tenantId, 'user', auth.userId, 'create_deal', 'deal:' + data.id, { title });
+  send(res, 201, data);
 });
 route('PATCH', '/api/deals/:id/stage', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { stage } = await readBody(req);
-  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND tenant_id = ?').get(params.id, auth.tenantId);
-  if (!deal) return send(res, 404, { error: 'not_found' });
-  db.prepare('UPDATE deals SET stage = ?, updated_at = ? WHERE id = ?').run(stage, now(), deal.id);
-  audit(auth.tenantId, 'user', auth.userId, 'update_deal_stage', 'deal:' + deal.id, { stage });
-  send(res, 200, db.prepare('SELECT * FROM deals WHERE id = ?').get(deal.id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.stage_changed', { id: params.id, stage });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  audit(auth.tenantId, 'user', auth.userId, 'update_deal_stage', 'deal:' + data.id, { stage });
+  send(res, 200, data);
 });
 route('DELETE', '/api/deals/:id', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
@@ -375,14 +369,11 @@ route('POST', '/api/modules', async (req, res) => {
 });
 route('POST', '/api/modules/:id/records', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  const mod = db.prepare('SELECT * FROM custom_modules WHERE id = ? AND tenant_id = ?').get(params.id, auth.tenantId);
-  if (!mod) return send(res, 404, { error: 'not_found' });
   const { values } = await readBody(req);
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO module_records (id, module_id, tenant_id, values_json, created_by, created_at) VALUES (?,?,?,?,?,?)')
-    .run(id, mod.id, auth.tenantId, JSON.stringify(values || {}), auth.userId, t);
-  audit(auth.tenantId, 'user', auth.userId, 'module_create_record', 'module_record:' + id, { module: mod.name });
-  send(res, 201, db.prepare('SELECT * FROM module_records WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'module.record_created', { moduleId: params.id, values });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  audit(auth.tenantId, 'user', auth.userId, 'module_create_record', 'module_record:' + data.record.id, { module: data.module.name });
+  send(res, 201, data.record);
 });
 route('GET', '/api/modules/:id/records', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;

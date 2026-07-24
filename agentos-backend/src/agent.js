@@ -12,9 +12,8 @@
 // real model in production — see README.
 
 const { db, uid, now } = require('./db');
-const { dispatch } = require('./actions');
+const { dispatch, STAGES, findDeal, findContact, findModule, findMarketItem, findTeamMember } = require('./actions');
 
-const STAGES = ['سرنخ', 'در حال مذاکره', 'پیشنهاد ارسال‌شده', 'برنده', 'ازدست‌رفته'];
 const SENSITIVE_ACTIONS = new Set([
   'issue_invoice', 'delete_deal', 'delete_contact',
   'build_module', 'delete_module', 'publish_module', 'install_module'
@@ -276,31 +275,9 @@ function devMockParse(text) {
   return { action: 'none', params: {}, reply: '(DEV_MOCK) بدون کلید ANTHROPIC_API_KEY، فقط چند دستور ساده فارسی رو می‌فهمم.' };
 }
 
-function findDeal(tenantId, title) {
-  if (!title) return null;
-  return db.prepare('SELECT * FROM deals WHERE tenant_id = ? AND title LIKE ? ORDER BY created_at DESC LIMIT 1')
-    .get(tenantId, `%${title}%`);
-}
-function findContact(tenantId, name) {
-  if (!name) return null;
-  return db.prepare('SELECT * FROM contacts WHERE tenant_id = ? AND name LIKE ? ORDER BY created_at DESC LIMIT 1')
-    .get(tenantId, `%${name}%`);
-}
-function findModule(tenantId, name) {
-  if (!name) return null;
-  return db.prepare('SELECT * FROM custom_modules WHERE tenant_id = ? AND name LIKE ? ORDER BY created_at DESC LIMIT 1')
-    .get(tenantId, `%${name}%`);
-}
-function findMarketItem(name) {
-  if (!name) return null;
-  return db.prepare('SELECT * FROM marketplace_modules WHERE name LIKE ? AND enabled = 1 ORDER BY created_at DESC LIMIT 1')
-    .get(`%${name}%`);
-}
-function findTeamMember(tenantId, name) {
-  if (!name) return null;
-  return db.prepare(`SELECT * FROM users WHERE tenant_id = ? AND status = 'active' AND name LIKE ? LIMIT 1`)
-    .get(tenantId, `%${name}%`);
-}
+// findDeal/findContact/findModule/findMarketItem/findTeamMember now live in
+// actions.js (single source, shared with the REST dispatch path). Only the
+// fuzzy-lookup helpers actions.js doesn't need yet stay here.
 function findTaskByTitle(tenantId, title) {
   if (!title) return null;
   return db.prepare(`SELECT * FROM tasks WHERE tenant_id = ? AND title LIKE ? ORDER BY created_at DESC LIMIT 1`)
@@ -324,36 +301,32 @@ function executeAction(tenantId, userId, action, params) {
       return { type: 'contact', data };
     }
     case 'create_deal': {
-      const id = uid();
-      const stage = STAGES.includes(params.stage) ? params.stage : 'سرنخ';
-      db.prepare('INSERT INTO deals (id, tenant_id, title, contact_name, amount, stage, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-        .run(id, tenantId, params.title || 'معامله جدید', params.contactName || '', params.amount != null ? Number(params.amount) : null, stage, userId, t, t);
-      audit(tenantId, 'agent', userId, 'create_deal', 'deal:' + id, params);
-      return { type: 'deal', data: db.prepare('SELECT * FROM deals WHERE id = ?').get(id) };
+      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.created', params);
+      audit(tenantId, 'agent', userId, 'create_deal', 'deal:' + data.id, params);
+      return { type: 'deal', data };
     }
     case 'update_deal_stage': {
-      const deal = findDeal(tenantId, params.dealTitle);
-      if (!deal || !STAGES.includes(params.newStage)) return null;
-      db.prepare('UPDATE deals SET stage = ?, updated_at = ? WHERE id = ?').run(params.newStage, t, deal.id);
-      audit(tenantId, 'agent', userId, 'update_deal_stage', 'deal:' + deal.id, params);
-      return { type: 'deal', data: db.prepare('SELECT * FROM deals WHERE id = ?').get(deal.id) };
+      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.stage_changed', params);
+      if (!data) return null;
+      audit(tenantId, 'agent', userId, 'update_deal_stage', 'deal:' + data.id, params);
+      return { type: 'deal', data };
     }
     case 'delete_deal': {
-      const deal = findDeal(tenantId, params.dealTitle);
+      const deal = findDeal(tenantId, null, params.dealTitle);
       if (!deal) return null;
       db.prepare('DELETE FROM deals WHERE id = ?').run(deal.id);
       audit(tenantId, 'agent', userId, 'delete_deal', 'deal:' + deal.id, params);
       return { type: 'deleted', data: { label: deal.title } };
     }
     case 'delete_contact': {
-      const c = findContact(tenantId, params.name);
+      const c = findContact(tenantId, null, params.name);
       if (!c) return null;
       db.prepare('DELETE FROM contacts WHERE id = ?').run(c.id);
       audit(tenantId, 'agent', userId, 'delete_contact', 'contact:' + c.id, params);
       return { type: 'deleted', data: { label: c.name } };
     }
     case 'issue_invoice': {
-      const deal = findDeal(tenantId, params.dealTitle);
+      const deal = findDeal(tenantId, null, params.dealTitle);
       const amount = params.amount != null ? Number(params.amount) : (deal ? deal.amount : null);
       const id = uid();
       db.prepare('INSERT INTO invoices (id, tenant_id, deal_title, amount, created_by, created_at) VALUES (?,?,?,?,?,?)')
@@ -378,7 +351,7 @@ function executeAction(tenantId, userId, action, params) {
       return { type: 'module_created', data: db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id) };
     }
     case 'delete_module': {
-      const mod = findModule(tenantId, params.moduleName);
+      const mod = findModule(tenantId, null, params.moduleName);
       if (!mod) return null;
       db.prepare('DELETE FROM module_records WHERE module_id = ?').run(mod.id);
       db.prepare('DELETE FROM custom_modules WHERE id = ?').run(mod.id);
@@ -386,22 +359,19 @@ function executeAction(tenantId, userId, action, params) {
       return { type: 'deleted', data: { label: mod.name } };
     }
     case 'module_create_record': {
-      const mod = findModule(tenantId, params.moduleName);
-      if (!mod) return null;
-      const id = uid();
-      db.prepare('INSERT INTO module_records (id, module_id, tenant_id, values_json, created_by, created_at) VALUES (?,?,?,?,?,?)')
-        .run(id, mod.id, tenantId, JSON.stringify(params.values || {}), userId, t);
-      audit(tenantId, 'agent', userId, 'module_create_record', 'module_record:' + id, params);
-      return { type: 'module_record', data: { module: mod, record: db.prepare('SELECT * FROM module_records WHERE id = ?').get(id) } };
+      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'module.record_created', params);
+      if (!data) return null;
+      audit(tenantId, 'agent', userId, 'module_create_record', 'module_record:' + data.record.id, params);
+      return { type: 'module_record', data };
     }
     case 'module_list_records': {
-      const mod = findModule(tenantId, params.moduleName);
+      const mod = findModule(tenantId, null, params.moduleName);
       if (!mod) return null;
       const records = db.prepare('SELECT * FROM module_records WHERE module_id = ? ORDER BY created_at DESC').all(mod.id);
       return { type: 'module_records_table', data: { module: mod, records } };
     }
     case 'publish_module': {
-      const mod = findModule(tenantId, params.moduleName);
+      const mod = findModule(tenantId, null, params.moduleName);
       if (!mod) return null;
       const existing = db.prepare('SELECT * FROM marketplace_modules WHERE name = ? AND published_by_tenant = ?').get(mod.name, tenantId);
       if (existing) {
@@ -416,7 +386,7 @@ function executeAction(tenantId, userId, action, params) {
       return { type: 'module_published', data: db.prepare('SELECT * FROM marketplace_modules WHERE id = ?').get(id) };
     }
     case 'install_module': {
-      const item = findMarketItem(params.moduleName);
+      const item = findMarketItem(null, params.moduleName);
       if (!item) return null;
       const id = uid();
       db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
@@ -428,15 +398,9 @@ function executeAction(tenantId, userId, action, params) {
     case 'list_marketplace':
       return { type: 'marketplace_table', data: db.prepare('SELECT * FROM marketplace_modules WHERE enabled = 1 ORDER BY created_at DESC').all() };
     case 'create_task': {
-      const assignee = params.assigneeName ? findTeamMember(tenantId, params.assigneeName) : null;
-      const dueAt = params.dueInDays != null ? t + Number(params.dueInDays) * 86400000 : null;
-      const id = uid();
-      db.prepare(`INSERT INTO tasks (id, tenant_id, title, description, assignee_id, created_by, due_at, status, created_at, updated_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, tenantId, params.title || 'وظیفه جدید', '', (assignee ? assignee.id : userId), userId, dueAt, 'open', t, t);
-      audit(tenantId, 'agent', userId, 'create_task', 'task:' + id, params);
-      const row = db.prepare('SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?').get(id);
-      return { type: 'task', data: row };
+      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'task.created', params);
+      audit(tenantId, 'agent', userId, 'create_task', 'task:' + data.id, params);
+      return { type: 'task', data };
     }
     case 'list_tasks': {
       const rows = db.prepare(`
@@ -446,7 +410,7 @@ function executeAction(tenantId, userId, action, params) {
     }
     case 'delegate_task': {
       const task = findTaskByTitle(tenantId, params.taskTitle);
-      const assignee = findTeamMember(tenantId, params.assigneeName);
+      const assignee = findTeamMember(tenantId, null, params.assigneeName);
       if (!task || !assignee) return null;
       db.prepare('UPDATE tasks SET assignee_id = ?, updated_at = ? WHERE id = ?').run(assignee.id, t, task.id);
       audit(tenantId, 'agent', userId, 'delegate_task', 'task:' + task.id, params);
@@ -507,7 +471,7 @@ async function act(tenantId, userId, text, history) {
     // Code-level dedup guard for build_module: don't rely solely on the model
     // following prompt instructions to avoid duplicates — enforce it here.
     if (action === 'build_module' && params.moduleName) {
-      const existing = findModule(tenantId, params.moduleName);
+      const existing = findModule(tenantId, null, params.moduleName);
       if (existing) {
         return {
           requiresApproval: false, action, domain,
