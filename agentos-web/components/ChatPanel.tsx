@@ -23,7 +23,12 @@ async function api(path: string, opts: RequestInit = {}) {
   return data;
 }
 
-const CHAT_STORAGE_KEY = 'agentos_chat_messages';
+// Keyed per-user, not a fixed key — localStorage is shared across the whole
+// browser origin, so a fixed key leaked one account's chat history into
+// whichever account next logged in on the same browser/device.
+function chatStorageKey(userId: string) {
+  return `agentos_chat_messages:${userId}`;
+}
 
 function esc(s: any) {
   return s === null || s === undefined ? '—' : String(s);
@@ -154,6 +159,7 @@ function ResultCard({ result }: { result: any }) {
 
 export default function ChatPanel() {
   const [agentName, setAgentName] = useState('Agent');
+  const [userId, setUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -163,19 +169,23 @@ export default function ChatPanel() {
   const recognizerRef = useRef<any>(null);
 
   // Restore any saved conversation on mount so switching tabs (which
-  // unmounts this component in the App Router) doesn't wipe the chat.
+  // unmounts this component in the App Router) doesn't wipe the chat. Keyed
+  // per-user (see chatStorageKey) so we must know who's logged in before
+  // touching localStorage at all.
   useEffect(() => {
-    let restored: Msg[] | null = null;
-    try {
-      const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
-      if (raw) restored = JSON.parse(raw);
-    } catch {
-      /* ignore corrupt storage */
-    }
-
     api('me').then((me) => {
       const name = me.user.agent_name || 'Agent';
       setAgentName(name);
+      setUserId(me.user.id);
+
+      let restored: Msg[] | null = null;
+      try {
+        const raw = window.localStorage.getItem(chatStorageKey(me.user.id));
+        if (raw) restored = JSON.parse(raw);
+      } catch {
+        /* ignore corrupt storage */
+      }
+
       if (restored && restored.length) {
         setMessages(restored);
       } else {
@@ -184,15 +194,15 @@ export default function ChatPanel() {
     });
   }, []);
 
-  // Save on every change (skip the initial empty render before restore completes).
+  // Save on every change (skip until we know which user this is).
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (!userId || messages.length === 0) return;
     try {
-      window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-60)));
+      window.localStorage.setItem(chatStorageKey(userId), JSON.stringify(messages.slice(-60)));
     } catch {
       /* storage full or unavailable — non-fatal */
     }
-  }, [messages]);
+  }, [messages, userId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
