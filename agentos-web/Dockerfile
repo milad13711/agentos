@@ -17,6 +17,11 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+# Docker sets HOSTNAME to the container ID automatically; the Next.js
+# standalone server binds to that instead of all interfaces unless we
+# override it, which breaks both the HEALTHCHECK below and anything
+# reaching the container via "localhost". Force it to bind everywhere.
+ENV HOSTNAME=0.0.0.0
 
 # Standalone output already contains a minimal node_modules subset + server.js
 COPY --from=builder /app/.next/standalone ./
