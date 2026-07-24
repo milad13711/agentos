@@ -180,6 +180,28 @@ CREATE INDEX IF NOT EXISTS idx_payments_tenant ON subscription_payments(tenant_i
 CREATE INDEX IF NOT EXISTS idx_payments_authority ON subscription_payments(authority);
 
 CREATE INDEX IF NOT EXISTS idx_pending_tenant ON pending_actions(tenant_id);
+
+-- Phase 1: unified write log, replacing audit_logs + pending_actions once the
+-- migration in docs/phase1-event-schema-agent-roles.md is complete. Additive
+-- for now — audit_logs/pending_actions keep working unchanged until every
+-- action is migrated (see checklist in that doc).
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  type TEXT NOT NULL,          -- 'contact.created', 'deal.stage_changed', ...
+  actor_type TEXT NOT NULL,    -- 'user' | 'agent' | 'system'
+  actor_id TEXT,               -- users.id — the human responsible, even when actor_role='agent'
+  actor_role TEXT NOT NULL,    -- 'owner' | 'admin' | 'member' | 'agent'
+  entity_type TEXT,
+  entity_id TEXT,
+  payload_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'applied', -- 'applied' | 'pending_approval' | 'rejected'
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 `);
 
 // --- safe migrations for columns added after the tables already existed ---
