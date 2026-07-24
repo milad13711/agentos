@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>AgentOS</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+
+/* ============================================================
+   Design tokens — professional B2B palette.
+   Rationale: cool near-black neutrals (not pure black) read as
+   "enterprise software", not "app"; a single muted gold/bronze
+   accent used sparingly (not bright saffron) signals quality
+   without feeling like a consumer/gaming UI; desaturated status
+   colors (success/danger) keep the interface calm. Swap these
+   variables directly once the brand character sheet is available.
+   ============================================================ */
+:root{
+  --bg:#0b0e14; --surface:#12161f; --surface-2:#171c27; --surface-3:#1d2330;
+  --border:rgba(255,255,255,0.08); --border-soft:rgba(255,255,255,0.045);
+  --primary:#c9a227; --primary-soft:rgba(201,162,39,0.14); --primary-dim:rgba(201,162,39,0.5);
+  --success:#3fa796; --success-soft:rgba(63,167,150,0.14);
+  --danger:#d65b5b; --danger-soft:rgba(214,91,91,0.14);
+  --info:#6b8fd6; --info-soft:rgba(107,143,214,0.14);
+  --text-1:#edeff3; --text-2:#9aa1b0; --text-3:#5f6675;
+  --radius-lg:16px; --radius-md:12px; --radius-sm:8px;
+}
+*{box-sizing:border-box}
+body{ margin:0; font-family:'Vazirmatn',system-ui,sans-serif; background:var(--bg); color:var(--text-1); height:100vh; overflow:hidden; }
+::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:6px}
+
+/* ---- auth ---- */
+.login-box{ max-width:380px; margin:70px auto; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:26px; }
+.login-box h1{ font-size:16px; margin:0 0 4px; font-weight:800; }
+.tabs2{ display:flex; gap:6px; margin-bottom:16px; }
+.tabs2 button{ flex:1; font-family:inherit; font-size:12px; font-weight:600; background:var(--surface-2); border:1px solid var(--border); color:var(--text-3); padding:8px; border-radius:var(--radius-sm); cursor:pointer; }
+.tabs2 button.active{ background:var(--primary-soft); color:var(--primary); border-color:var(--primary-dim); }
+.field{ margin-bottom:10px; }
+.field label{ font-size:11px; color:var(--text-3); display:block; margin-bottom:5px; }
+.field input, .field textarea, .field select{ width:100%; font-family:inherit; font-size:13px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; color:var(--text-1); outline:none; }
+.field input:focus, .field textarea:focus{ border-color:var(--primary-dim); }
+.btn{ font-family:inherit; font-size:12.5px; font-weight:700; border-radius:var(--radius-sm); padding:9px 15px; cursor:pointer; border:none; transition:.15s; }
+.btn-primary{ background:var(--primary); color:#1a1400; }
+.btn-primary:hover{ filter:brightness(1.1) }
+.btn-primary:disabled{ opacity:.4; cursor:default; }
+.btn-ghost{ background:var(--surface-2); color:var(--text-1); border:1px solid var(--border); }
+.btn-ghost:hover{ background:var(--surface-3); }
+.btn-danger{ background:var(--danger-soft); color:var(--danger); border:1px solid rgba(214,91,91,.3); }
+.btn-block{ width:100%; }
+.err{ font-size:12px; color:var(--danger); margin-top:10px; }
+.locked-note{ font-size:11px; color:var(--text-3); background:var(--surface-2); border:1px dashed var(--border); border-radius:var(--radius-sm); padding:8px 10px; margin-top:8px; }
+
+/* ---- app shell ---- */
+.app-shell{ display:flex; height:100%; }
+.sidebar{ width:225px; border-left:1px solid var(--border-soft); padding:16px 12px; overflow-y:auto; flex-shrink:0; background:var(--surface); display:flex; flex-direction:column; }
+.brand{ font-weight:800; font-size:14px; display:flex; align-items:center; gap:8px; padding:0 4px 16px; }
+.brand .mark{ width:24px; height:24px; border-radius:7px; background:linear-gradient(135deg,var(--primary),#9c7d1c); flex-shrink:0; }
+.nav-item{ display:flex; align-items:center; gap:9px; font-size:12.5px; font-weight:600; color:var(--text-2); padding:9px 12px; border-radius:var(--radius-sm); cursor:pointer; margin-bottom:3px; }
+.nav-item:hover{ background:var(--surface-2); }
+.nav-item.active{ background:var(--primary-soft); color:var(--primary); }
+.nav-spacer{ flex:1; }
+.user-chip{ font-size:11px; color:var(--text-3); padding:10px 8px 4px; border-top:1px solid var(--border-soft); margin-top:8px; }
+.user-chip b{ color:var(--text-2); display:block; font-size:12px; }
+.logout-btn{ font-family:inherit; font-size:11px; color:var(--text-3); background:transparent; border:none; cursor:pointer; padding:4px 8px; }
+
+.main-col{ flex:1; display:flex; flex-direction:column; min-width:0; }
+.main-top{ padding:14px 22px; border-bottom:1px solid var(--border-soft); font-size:14px; font-weight:800; }
+.main-body{ flex:1; overflow-y:auto; padding:20px 22px; }
+
+/* ---- chat ---- */
+.chat-scroll{ flex:1; overflow-y:auto; padding:18px 22px; display:flex; flex-direction:column; gap:12px; }
+.msg-row{ display:flex; gap:10px; }
+.msg-row.user{ flex-direction:row-reverse; }
+.avatar{ width:26px; height:26px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:700; }
+.avatar.agent{ background:linear-gradient(135deg,var(--primary),#9c7d1c); color:#1a1400; }
+.avatar.user{ background:var(--surface-3); border:1px solid var(--border); }
+.bubble-col{ max-width:74%; }
+.msg-row.user .bubble-col{ margin-inline-start:auto; }
+.bubble{ padding:10px 13px; border-radius:14px; font-size:13px; line-height:1.85; }
+.bubble.agent{ background:var(--surface-2); border:1px solid var(--border-soft); border-radius:4px 14px 14px 14px; }
+.bubble.user{ background:var(--primary-soft); border:1px solid var(--primary-dim); color:#f2e2ae; border-radius:14px 4px 14px 14px; }
+.card{ border:1px solid var(--border); border-right:3px solid var(--primary); background:var(--surface-2); border-radius:4px 12px 12px 4px; padding:11px 13px; margin-top:6px; font-size:12px; }
+.card.approval{ border-right-color:var(--danger); }
+.approval-actions{ display:flex; gap:8px; margin-top:9px; }
+.approval-btn{ flex:1; font-family:inherit; font-size:11.5px; font-weight:700; border-radius:var(--radius-sm); padding:7px 0; cursor:pointer; border:1px solid transparent; }
+.approval-btn.approve{ background:var(--success-soft); color:var(--success); }
+.approval-btn.reject{ background:var(--danger-soft); color:var(--danger); }
+.mini-table{ width:100%; border-collapse:collapse; font-size:11.5px; margin-top:4px; }
+.mini-table th{ text-align:right; color:var(--text-3); font-weight:600; padding:4px 6px; border-bottom:1px solid var(--border); }
+.mini-table td{ padding:5px 6px; border-bottom:1px solid var(--border-soft); color:var(--text-2); }
+.report-actions{ display:flex; gap:8px; margin-top:9px; }
+
+.input-bar{ padding:14px 18px; border-top:1px solid var(--border-soft); }
+.input-shell{ display:flex; gap:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-lg); padding:6px; }
+.input-shell input{ flex:1; background:transparent; border:none; outline:none; color:var(--text-1); font-family:inherit; font-size:13px; padding:9px 10px; }
+.icon-btn{ background:var(--surface-3); color:var(--text-1); border:1px solid var(--border); border-radius:var(--radius-sm); width:36px; height:36px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; }
+.icon-btn.listening{ background:var(--danger-soft); color:var(--danger); border-color:rgba(214,91,91,.3); animation:pulse 1.2s infinite; }
+@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.5} }
+.send-btn{ background:var(--primary); color:#1a1400; border:none; border-radius:var(--radius-sm); width:36px; height:36px; cursor:pointer; flex-shrink:0; }
+.voice-note{ font-size:10px; color:var(--text-3); text-align:center; padding:6px; }
+
+/* ---- generic table view (team/tasks) ---- */
+table.data{ width:100%; border-collapse:collapse; font-size:12.5px; background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-md); overflow:hidden; }
+table.data th{ text-align:right; color:var(--text-3); font-weight:600; padding:10px 12px; border-bottom:1px solid var(--border); font-size:11px; }
+table.data td{ padding:10px 12px; border-bottom:1px solid var(--border-soft); color:var(--text-2); }
+table.data tr:last-child td{ border-bottom:none; }
+.badge{ font-size:10.5px; padding:2px 9px; border-radius:100px; font-weight:600; }
+.badge.owner{ background:var(--primary-soft); color:var(--primary); }
+.badge.admin{ background:var(--info-soft); color:var(--info); }
+.badge.member{ background:var(--surface-3); color:var(--text-2); }
+.badge.open{ background:var(--info-soft); color:var(--info); }
+.badge.done{ background:var(--success-soft); color:var(--success); }
+.panel{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-lg); padding:18px; margin-bottom:18px; }
+.panel h3{ margin:0 0 14px; font-size:13.5px; }
+.row-inline{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+.row-inline .field{ flex:1; min-width:140px; margin-bottom:0; }
+.section-title{ font-size:12px; font-weight:700; color:var(--text-3); margin:22px 0 10px; text-transform:uppercase; letter-spacing:.4px; }
+.temp-pw-note{ background:var(--success-soft); color:var(--success); border-radius:var(--radius-sm); padding:9px 12px; font-size:12px; margin-top:10px; }
+
+/* ---- print report ---- */
+#printArea{ display:none; }
+@media print{
+  body > *:not(#printArea){ display:none !important; }
+  #printArea{ display:block !important; padding:24px; direction:rtl; font-family:'Vazirmatn',sans-serif; color:#000; }
+  #printArea table{ width:100%; border-collapse:collapse; }
+  #printArea th, #printArea td{ border:1px solid #999; padding:6px 8px; font-size:12px; text-align:right; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="printArea"></div>
+
+<script>
+(function(){
+  const API_BASE = window.localStorage.getItem('agentos_api_base') || 'http://localhost:8787';
+  let token = window.localStorage.getItem('agentos_token') || null;
+  let loginMode = 'login';
+  let me = null;
+  let tab = 'chat';
+  let messages = [];
+  let sending = false;
+  let recognizer = null;
+  let listening = false;
+  let voiceOutEnabled = window.localStorage.getItem('agentos_voice_out') === '1';
+
+  const $app = document.getElementById('app');
+
+  async function api(path, opts){
+    const res = await fetch(API_BASE + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts && opts.headers || {}) }
+    });
+    const ct = res.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await res.json().catch(() => ({})) : null;
+    if (!res.ok) throw Object.assign(new Error((data && (data.message || data.error)) || 'request_failed'), { status: res.status, data });
+    return data;
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function fmtToman(n){ return n==null ? '—' : Number(n).toLocaleString('en-US') + ' تومان'; }
+  function fmtDate(ts){ return ts ? new Date(ts).toLocaleDateString('fa-IR') : '—'; }
+
+  // ================= AUTH =================
+  function renderAuth(errMsg){
+    $app.innerHTML = `
+      <div class="login-box">
+        <h1>🔐 AgentOS</h1>
+        <div class="field"><label>API Base URL</label><input id="apiBaseInput" value="${esc(API_BASE)}" /></div>
+        <div class="tabs2">
+          <button class="${loginMode==='login'?'active':''}" data-mode="login">ورود</button>
+          <button class="${loginMode==='register'?'active':''}" data-mode="register">ثبت‌نام سازمان جدید</button>
+        </div>
+        ${loginMode==='register' ? `
+          <div class="field"><label>نام شرکت</label><input id="tenantName" /></div>
+          <div class="field"><label>نام شما</label><input id="name" /></div>
+        ` : ''}
+        <div class="field"><label>ایمیل</label><input id="email" type="email" /></div>
+        <div class="field"><label>رمز عبور</label><input id="password" type="password" /></div>
+        <button class="btn btn-primary btn-block" id="submitBtn">${loginMode==='login'?'ورود':'ثبت‌نام'}</button>
+        ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
+      </div>`;
+    Array.from(document.querySelectorAll('[data-mode]')).forEach(el => el.addEventListener('click', () => { loginMode = el.getAttribute('data-mode'); renderAuth(); }));
+    document.getElementById('submitBtn').addEventListener('click', submitAuth);
+    document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+  }
+
+  async function submitAuth(){
+    const apiBaseInput = document.getElementById('apiBaseInput').value.trim().replace(/\/$/, '');
+    window.localStorage.setItem('agentos_api_base', apiBaseInput);
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const path = loginMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const body = loginMode === 'login' ? { email, password }
+      : { email, password, tenantName: document.getElementById('tenantName').value.trim(), name: document.getElementById('name').value.trim() };
+    try{
+      const res = await fetch(apiBaseInput + path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'failed');
+      token = data.token;
+      window.localStorage.setItem('agentos_token', token);
+      messages = [];
+      await boot();
+    }catch(e){ renderAuth(e.message); }
+  }
+  function logout(){ window.localStorage.removeItem('agentos_token'); token = null; me = null; renderAuth(); }
+
+  // ================= SHELL =================
+  async function boot(){
+    try{ me = await api('/api/me'); }
+    catch(e){ return logout(); }
+    renderShell();
+  }
+
+  const NAV = [
+    { key:'chat', label:'💬 گفتگو با Agent' },
+    { key:'tasks', label:'✅ وظایف و پیگیری' },
+    { key:'team', label:'👥 تیم و دسترسی‌ها' },
+    { key:'reports', label:'📊 گزارش‌ها' },
+    { key:'settings', label:'⚙️ شخصی‌سازی Agent' }
+  ];
+
+  function renderShell(){
+    $app.innerHTML = `
+      <div class="app-shell">
+        <div class="sidebar">
+          <div class="brand"><div class="mark"></div>AgentOS</div>
+          ${NAV.map(n => `<div class="nav-item ${tab===n.key?'active':''}" data-nav="${n.key}">${n.label}</div>`).join('')}
+          <div class="nav-spacer"></div>
+          <div class="user-chip"><b>${esc(me.user.name)}</b>${esc(me.tenant.name)} · <span class="badge ${me.user.role}">${esc(me.user.role)}</span></div>
+          <button class="logout-btn" id="logoutBtn">خروج از حساب</button>
+        </div>
+        <div class="main-col" id="mainCol"></div>
+      </div>`;
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    Array.from(document.querySelectorAll('[data-nav]')).forEach(el => el.addEventListener('click', () => { tab = el.getAttribute('data-nav'); renderShell(); }));
+    if (tab === 'chat') renderChatTab();
+    else if (tab === 'tasks') renderTasksTab();
+    else if (tab === 'team') renderTeamTab();
+    else if (tab === 'reports') renderReportsTab();
+    else if (tab === 'settings') renderSettingsTab();
+  }
+
+  // ================= CHAT =================
+  function renderChatTab(){
+    const $main = document.getElementById('mainCol');
+    $main.innerHTML = `
+      <div class="main-top">${esc(me.user.agent_name || 'Agent')} — دستیار CRM شما</div>
+      <div class="chat-scroll" id="chatScroll"></div>
+      <div class="input-bar">
+        <div class="input-shell">
+          <button class="icon-btn" id="micBtn" title="ورودی صوتی">🎙️</button>
+          <input id="msgInput" placeholder="مثلاً: مشتری جدید ثبت کن به نام آقای رضایی" />
+          <button class="send-btn" id="sendBtn">↑</button>
+        </div>
+        <div class="voice-note">
+          <label><input type="checkbox" id="voiceOutToggle" ${voiceOutEnabled?'checked':''} /> پاسخ Agent با صدا خوانده بشه</label>
+          — متصل به ${esc(API_BASE)}
+        </div>
+      </div>`;
+    document.getElementById('sendBtn').addEventListener('click', handleSend);
+    document.getElementById('msgInput').addEventListener('keydown', e => { if (e.key==='Enter') handleSend(); });
+    document.getElementById('micBtn').addEventListener('click', toggleVoiceInput);
+    document.getElementById('voiceOutToggle').addEventListener('change', e => {
+      voiceOutEnabled = e.target.checked;
+      window.localStorage.setItem('agentos_voice_out', voiceOutEnabled ? '1' : '0');
+    });
+
+    if (messages.length === 0) {
+      messages.push({ role:'agent', text:`سلام 👋 من ${me.user.agent_name || 'Agent'} هستم، دستیار شما در AgentOS. می‌تونی با متن یا صدا باهام صحبت کنی.` });
+    }
+    renderChat();
+  }
+
+  function renderChat(){
+    const $chat = document.getElementById('chatScroll');
+    if (!$chat) return;
+    $chat.innerHTML = messages.map(m => {
+      const isUser = m.role === 'user';
+      let card = '';
+      if (m.pendingId) {
+        card = `<div class="card approval">
+          <div style="color:var(--danger);font-size:10.5px;font-weight:700;margin-bottom:6px">نیاز به تایید — ${esc(m.action)}</div>
+          <pre style="white-space:pre-wrap;font-size:10.5px;color:var(--text-3);direction:ltr;text-align:left">${esc(JSON.stringify(m.params))}</pre>
+          ${m.resolved
+            ? `<div style="font-size:11px;color:${m.resolved==='approved'?'var(--success)':'var(--danger)'}">${m.resolved==='approved'?'✅ تایید شد':'✖️ رد شد'}</div>`
+            : `<div class="approval-actions">
+                 <button class="approval-btn approve" data-approve="${m.pendingId}">تایید</button>
+                 <button class="approval-btn reject" data-reject="${m.pendingId}">رد</button>
+               </div>`}
+        </div>`;
+      } else if (m.result && m.result.type === 'report_data') {
+        const rd = m.result.data;
+        card = `<div class="card">
+          <b style="font-size:11.5px">گزارش ${esc(rd.reportType)}</b>
+          <table class="mini-table"><thead><tr>${rd.columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+          <tbody>${rd.rows.slice(0,8).map(r=>`<tr>${rd.columns.map(c=>`<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>
+          <div class="report-actions">
+            <button class="btn btn-ghost" data-xlsx="${rd.reportType}">⬇ دانلود Excel واقعی (.xlsx)</button>
+            <button class="btn btn-ghost" data-print="${rd.reportType}">🖨 چاپ / PDF</button>
+          </div>
+        </div>`;
+      } else if (m.result) {
+        card = `<div class="card"><pre style="white-space:pre-wrap;font-size:10.5px;color:var(--text-2);direction:ltr;text-align:left">${esc(JSON.stringify(m.result, null, 2))}</pre></div>`;
+      }
+      return `<div class="msg-row ${isUser?'user':'agent'}">
+        <div class="avatar ${isUser?'user':'agent'}">${isUser?'شما':'A'}</div>
+        <div class="bubble-col"><div class="bubble ${isUser?'user':'agent'}">${esc(m.text)}</div>${card}</div>
+      </div>`;
+    }).join('');
+    $chat.scrollTop = $chat.scrollHeight;
+    Array.from($chat.querySelectorAll('[data-approve]')).forEach(el => el.addEventListener('click', () => resolvePending(el.getAttribute('data-approve'), true)));
+    Array.from($chat.querySelectorAll('[data-reject]')).forEach(el => el.addEventListener('click', () => resolvePending(el.getAttribute('data-reject'), false)));
+    Array.from($chat.querySelectorAll('[data-xlsx]')).forEach(el => el.addEventListener('click', () => downloadFile(el.getAttribute('data-xlsx'), 'xlsx')));
+    Array.from($chat.querySelectorAll('[data-print]')).forEach(el => {
+      const m = messages.find(x => x.result && x.result.data && x.result.data.reportType === el.getAttribute('data-print'));
+      el.addEventListener('click', () => printReport(m.result.data));
+    });
+  }
+
+  function downloadFile(reportType, ext){
+    const url = `${API_BASE}/api/reports/${reportType}.${ext}`;
+    fetch(url, { headers: { Authorization: 'Bearer ' + token } })
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${reportType}.${ext}`;
+        a.click();
+      });
+  }
+
+  // Real, correct Persian/RTL PDF: rendered by the browser's own engine via
+  // window.print() rather than a hand-built PDF byte stream — this is the
+  // only zero-dependency way to get proper Persian glyph + RTL rendering
+  // (a hand-rolled PDF with the standard Helvetica font cannot draw Persian
+  // glyphs; the browser's own text engine handles it correctly).
+  function printReport(rd){
+    const $print = document.getElementById('printArea');
+    $print.innerHTML = `
+      <h2>گزارش ${esc(rd.reportType)}</h2>
+      <p style="color:#555;font-size:11px">تولید شده توسط AgentOS — ${new Date().toLocaleString('fa-IR')}</p>
+      <table><thead><tr>${rd.columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rd.rows.map(r=>`<tr>${rd.columns.map(c=>`<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    window.print();
+  }
+
+  // ---- voice input (Web Speech API — native browser, zero dependency) ----
+  function toggleVoiceInput(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('مرورگر شما از ورودی صوتی پشتیبانی نمی‌کنه. Chrome رو امتحان کن.'); return; }
+    if (listening) { recognizer && recognizer.stop(); return; }
+    recognizer = new SR();
+    recognizer.lang = 'fa-IR';
+    recognizer.interimResults = false;
+    recognizer.onstart = () => { listening = true; document.getElementById('micBtn').classList.add('listening'); };
+    recognizer.onend = () => { listening = false; document.getElementById('micBtn') && document.getElementById('micBtn').classList.remove('listening'); };
+    recognizer.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      document.getElementById('msgInput').value = text;
+      handleSend();
+    };
+    recognizer.onerror = () => { listening = false; document.getElementById('micBtn') && document.getElementById('micBtn').classList.remove('listening'); };
+    recognizer.start();
+  }
+  function speak(text){
+    if (!voiceOutEnabled || !window.speechSynthesis || !text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'fa-IR';
+    window.speechSynthesis.speak(u);
+  }
+
+  async function resolvePending(pendingId, approve){
+    try{
+      await api(`/api/agent/pending/${pendingId}/${approve?'approve':'reject'}`, { method:'POST' });
+      const m = messages.find(x => x.pendingId === pendingId);
+      if (m) m.resolved = approve ? 'approved' : 'rejected';
+      renderChat();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function handleSend(){
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text || sending) return;
+    sending = true;
+    input.value = '';
+    const history = messages.filter(m => !m.thinking).slice(-8).map(m => ({ role: m.role, text: m.text }));
+    messages.push({ role:'user', text });
+    messages.push({ role:'agent', text:'⏳ در حال پردازش...', thinking:true });
+    renderChat();
+    try{
+      const result = await api('/api/agent/act', { method:'POST', body: JSON.stringify({ text, history }) });
+      messages = messages.filter(m => !m.thinking);
+      if (result.requiresApproval) {
+        messages.push({ role:'agent', text: result.reply, pendingId: result.pendingId, action: result.action, params: result.params, resolved:null });
+      } else {
+        messages.push({ role:'agent', text: result.reply || 'انجام شد.', result: result.result });
+        speak(result.reply || '');
+      }
+    }catch(e){
+      messages = messages.filter(m => !m.thinking);
+      messages.push({ role:'agent', text: 'خطا: ' + e.message });
+    }
+    sending = false;
+    renderChat();
+  }
+
+  // ================= TASKS =================
+  async function renderTasksTab(){
+    const $main = document.getElementById('mainCol');
+    $main.innerHTML = `<div class="main-top">وظایف، یادآورها و پیگیری‌ها</div><div class="main-body" id="tasksBody"><p style="color:var(--text-3)">در حال بارگذاری...</p></div>`;
+    const [tasks, team] = await Promise.all([api('/api/tasks'), api('/api/team')]);
+    const $body = document.getElementById('tasksBody');
+    $body.innerHTML = `
+      <div class="panel">
+        <h3>وظیفه جدید</h3>
+        <div class="row-inline">
+          <div class="field"><label>عنوان</label><input id="newTaskTitle" placeholder="مثلاً: پیگیری قرارداد X" /></div>
+          <div class="field"><label>مسئول</label><select id="newTaskAssignee">${team.map(u=>`<option value="${u.id}" ${u.id===me.user.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div>
+          <div class="field" style="max-width:160px"><label>موعد</label><input id="newTaskDue" type="date" /></div>
+          <button class="btn btn-primary" id="addTaskBtn">افزودن</button>
+        </div>
+      </div>
+      <table class="data">
+        <thead><tr><th>عنوان</th><th>مسئول</th><th>موعد</th><th>وضعیت</th><th>ارجاع به</th><th></th></tr></thead>
+        <tbody>${tasks.map(t => `
+          <tr>
+            <td><b>${esc(t.title)}</b></td>
+            <td>${esc(t.assignee_name || '—')}</td>
+            <td>${fmtDate(t.due_at)}</td>
+            <td><span class="badge ${t.status}">${t.status==='open'?'باز':'انجام‌شده'}</span></td>
+            <td>
+              <select data-delegate="${t.id}">
+                ${team.map(u=>`<option value="${u.id}" ${u.id===t.assignee_id?'selected':''}>${esc(u.name)}</option>`).join('')}
+              </select>
+            </td>
+            <td>${t.status==='open' ? `<button class="btn btn-ghost" data-done="${t.id}">✓ انجام شد</button>` : ''}</td>
+          </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-3)">وظیفه‌ای ثبت نشده</td></tr>'}
+        </tbody>
+      </table>
+    `;
+    document.getElementById('addTaskBtn').addEventListener('click', async () => {
+      const title = document.getElementById('newTaskTitle').value.trim();
+      if (!title) return;
+      const assigneeId = document.getElementById('newTaskAssignee').value;
+      const dueStr = document.getElementById('newTaskDue').value;
+      const dueAt = dueStr ? new Date(dueStr).getTime() : null;
+      await api('/api/tasks', { method:'POST', body: JSON.stringify({ title, assigneeId, dueAt }) });
+      renderTasksTab();
+    });
+    Array.from($body.querySelectorAll('[data-done]')).forEach(el => el.addEventListener('click', async () => {
+      await api('/api/tasks/' + el.getAttribute('data-done'), { method:'PATCH', body: JSON.stringify({ status:'done' }) });
+      renderTasksTab();
+    }));
+    Array.from($body.querySelectorAll('[data-delegate]')).forEach(el => el.addEventListener('change', async () => {
+      await api('/api/tasks/' + el.getAttribute('data-delegate'), { method:'PATCH', body: JSON.stringify({ assigneeId: el.value }) });
+      renderTasksTab();
+    }));
+  }
+
+  // ================= TEAM (RBAC) =================
+  async function renderTeamTab(){
+    const $main = document.getElementById('mainCol');
+    const canManage = ['owner','admin'].includes(me.user.role);
+    $main.innerHTML = `<div class="main-top">تیم و سطوح دسترسی</div><div class="main-body" id="teamBody"><p style="color:var(--text-3)">در حال بارگذاری...</p></div>`;
+    const team = await api('/api/team');
+    const $body = document.getElementById('teamBody');
+    $body.innerHTML = `
+      ${canManage ? `
+      <div class="panel">
+        <h3>افزودن پرسنل جدید</h3>
+        <div class="row-inline">
+          <div class="field"><label>نام</label><input id="inviteName" /></div>
+          <div class="field"><label>ایمیل</label><input id="inviteEmail" type="email" /></div>
+          <div class="field" style="max-width:140px"><label>نقش</label>
+            <select id="inviteRole">
+              <option value="member">Member</option>
+              ${me.user.role==='owner' ? '<option value="admin">Admin</option>' : ''}
+            </select>
+          </div>
+          <button class="btn btn-primary" id="inviteBtn">دعوت</button>
+        </div>
+        <div id="inviteResult"></div>
+      </div>` : ''}
+      <table class="data">
+        <thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>Agent شخصی</th><th>وضعیت</th>${canManage?'<th></th>':''}</tr></thead>
+        <tbody>${team.map(u => `
+          <tr>
+            <td><b>${esc(u.name)}</b></td>
+            <td style="direction:ltr;text-align:left">${esc(u.email)}</td>
+            <td>
+              ${canManage && u.role !== 'owner'
+                ? `<select data-role="${u.id}"><option value="member" ${u.role==='member'?'selected':''}>Member</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`
+                : `<span class="badge ${u.role}">${esc(u.role)}</span>`}
+            </td>
+            <td>${esc(u.agent_name || '—')}</td>
+            <td><span class="badge ${u.status==='active'?'done':'member'}">${u.status==='active'?'فعال':'غیرفعال'}</span></td>
+            ${canManage ? `<td>${u.role!=='owner' && u.id!==me.user.id ? `<button class="btn btn-danger" data-remove="${u.id}">حذف</button>` : ''}</td>` : ''}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="locked-note">نقش <b>Owner</b> همیشه دسترسی کامل داره. <b>Admin</b> می‌تونه پرسنل مدیریت کنه ولی نمی‌تونه Owner بسازه. <b>Member</b> فقط به کار خودش و وظایف ارجاع‌شده دسترسی داره.</div>
+    `;
+    if (canManage) {
+      document.getElementById('inviteBtn').addEventListener('click', async () => {
+        const name = document.getElementById('inviteName').value.trim();
+        const email = document.getElementById('inviteEmail').value.trim();
+        const role = document.getElementById('inviteRole').value;
+        try{
+          const res = await api('/api/team/invite', { method:'POST', body: JSON.stringify({ name, email, role }) });
+          document.getElementById('inviteResult').innerHTML = `<div class="temp-pw-note">${esc(name)} اضافه شد. رمز موقت: <b style="direction:ltr;display:inline-block">${esc(res.tempPassword)}</b> (این رمز رو به‌صورت امن به کاربر بده تا اولین ورودش رو انجام بده)</div>`;
+          setTimeout(() => renderTeamTab(), 4000);
+        }catch(e){ document.getElementById('inviteResult').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      });
+      Array.from($body.querySelectorAll('[data-role]')).forEach(el => el.addEventListener('change', async () => {
+        await api('/api/team/' + el.getAttribute('data-role') + '/role', { method:'PATCH', body: JSON.stringify({ role: el.value }) });
+        renderTeamTab();
+      }));
+      Array.from($body.querySelectorAll('[data-remove]')).forEach(el => el.addEventListener('click', async () => {
+        if (!confirm('این پرسنل غیرفعال بشه؟')) return;
+        await api('/api/team/' + el.getAttribute('data-remove'), { method:'DELETE' });
+        renderTeamTab();
+      }));
+    }
+  }
+
+  // ================= REPORTS =================
+  function renderReportsTab(){
+    const $main = document.getElementById('mainCol');
+    const types = [ ['deals','معاملات'], ['contacts','مخاطبین'], ['invoices','فاکتورها'], ['tasks','وظایف'] ];
+    $main.innerHTML = `
+      <div class="main-top">گزارش‌ها</div>
+      <div class="main-body">
+        <div class="panel">
+          <h3>دانلود گزارش</h3>
+          <p style="color:var(--text-3);font-size:12px;margin-top:-6px">Excel یک فایل .xlsx واقعی است (نه CSV با پسوند اکسل). PDF از طریق چاپ مرورگر ساخته می‌شه تا فارسی/RTL درست رندر بشه.</p>
+          ${types.map(([key,label]) => `
+            <div class="row-inline" style="margin-bottom:10px">
+              <div style="flex:1;font-size:13px">${label}</div>
+              <button class="btn btn-ghost" data-xlsx="${key}">⬇ Excel (.xlsx)</button>
+              <button class="btn btn-ghost" data-print="${key}">🖨 PDF</button>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    Array.from(document.querySelectorAll('[data-xlsx]')).forEach(el => el.addEventListener('click', () => downloadFile(el.getAttribute('data-xlsx'), 'xlsx')));
+    Array.from(document.querySelectorAll('[data-print]')).forEach(el => el.addEventListener('click', async () => {
+      const key = el.getAttribute('data-print');
+      const colsMap = {
+        deals: [['title','عنوان'],['contact_name','مخاطب'],['amount','مبلغ'],['stage','مرحله']],
+        contacts: [['name','نام'],['phone','تلفن'],['company','شرکت']],
+        invoices: [['deal_title','معامله'],['amount','مبلغ']],
+        tasks: [['title','عنوان'],['assignee_name','مسئول'],['status','وضعیت']]
+      };
+      const rows = await api('/api/' + key);
+      printReport({ reportType: key, columns: colsMap[key].map(c=>c[1]), rows: rows.map(r => Object.fromEntries(colsMap[key].map(([k,l]) => [l, r[k]]))) });
+    }));
+  }
+
+  // ================= SETTINGS (Agent persona) =================
+  function renderSettingsTab(){
+    const $main = document.getElementById('mainCol');
+    $main.innerHTML = `
+      <div class="main-top">شخصی‌سازی Agent شخصی من</div>
+      <div class="main-body">
+        <div class="panel">
+          <h3>نام و شخصیت Agent</h3>
+          <div class="field"><label>اسم Agent</label><input id="agentNameInput" value="${esc(me.user.agent_name || '')}" placeholder="مثلاً: آریا" /></div>
+          <div class="field"><label>شخصیت (چطور باهات صحبت کنه؟)</label><textarea id="agentPersonaInput" rows="3" placeholder="مثلاً: رسمی و خیلی مختصر صحبت کن / دوستانه و با شوخ‌طبعی">${esc(me.user.agent_persona || '')}</textarea></div>
+          <button class="btn btn-primary" id="saveAgentBtn">ذخیره</button>
+          <div id="agentSaveMsg"></div>
+        </div>
+      </div>`;
+    document.getElementById('saveAgentBtn').addEventListener('click', async () => {
+      try{
+        const agentName = document.getElementById('agentNameInput').value.trim();
+        const agentPersona = document.getElementById('agentPersonaInput').value.trim();
+        await api('/api/me/agent', { method:'PATCH', body: JSON.stringify({ agentName, agentPersona }) });
+        me.user.agent_name = agentName; me.user.agent_persona = agentPersona;
+        document.getElementById('agentSaveMsg').innerHTML = `<div class="temp-pw-note">✓ ذخیره شد</div>`;
+      }catch(e){
+        document.getElementById('agentSaveMsg').innerHTML = `<div class="err">${esc(e.message)}</div><div class="locked-note">شخصی‌سازی شخصیت Agent از پلن Starter به بالا فعال می‌شه.</div>`;
+      }
+    });
+  }
+
+  // ================= boot =================
+  if (!token) renderAuth(); else boot();
+})();
+</script>
+</body>
+</html>

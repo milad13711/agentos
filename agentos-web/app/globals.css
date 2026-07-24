@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --bg:#0b0e14; --surface:#12161f; --surface-2:#171c27; --surface-3:#1d2330;
+  --border:rgba(255,255,255,0.08); --border-soft:rgba(255,255,255,0.045);
+  --primary:#c9a227; --primary-soft:rgba(201,162,39,0.14); --primary-dim:rgba(201,162,39,0.5);
+  --success:#3fa796; --success-soft:rgba(63,167,150,0.14);
+  --danger:#d65b5b; --danger-soft:rgba(214,91,91,0.14);
+  --info:#6b8fd6; --info-soft:rgba(107,143,214,0.14);
+  --text-1:#edeff3; --text-2:#9aa1b0; --text-3:#5f6675;
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Vazirmatn', system-ui, sans-serif;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; }
+
+@media print {
+  body > *:not(#print-root) { display: none !important; }
+}

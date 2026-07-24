@@ -1,0 +1,14 @@
+{
+  "name": "agentos-backend",
+  "version": "0.1.0",
+  "description": "AgentOS real backend — MVP/V1 slice. Pure Node.js (no external dependencies): node:http + node:sqlite + node:crypto.",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

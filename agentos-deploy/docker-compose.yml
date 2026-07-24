@@ -1,0 +1,65 @@
+version: "3.9"
+
+# Place this file in the PARENT folder that contains both agentos-backend/
+# and agentos-web/ (e.g. ~/Documents/agent-os-project/docker-compose.yml).
+#
+# Usage:
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down            (stops containers, keeps data volume)
+#   docker compose down -v         (also deletes the SQLite data volume — careful)
+
+services:
+  backend:
+    build: ./agentos-backend
+    restart: unless-stopped
+    environment:
+      - PORT=8787
+      - AGENTOS_DB_PATH=/app/data/agentos.sqlite
+      - AGENTOS_TOKEN_SECRET=${AGENTOS_TOKEN_SECRET:?set a long random secret in .env}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AGENTOS_MODEL=${AGENTOS_MODEL:-claude-sonnet-4-6}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - AI_PROVIDER=${AI_PROVIDER:-}
+      - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
+      - ZARINPAL_MERCHANT_ID=${ZARINPAL_MERCHANT_ID:-}
+      - ZARINPAL_SANDBOX=${ZARINPAL_SANDBOX:-1}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:?set your real public domain, e.g. https://exirsms.ir}
+    volumes:
+      - agentos_data:/app/data
+    networks: [agentos]
+    # Not exposed to the host on purpose — only the "web" service and Caddy
+    # talk to it, over the internal Docker network. The AI key never needs
+    # to leave this container.
+
+  web:
+    build: ./agentos-web
+    restart: unless-stopped
+    environment:
+      - AGENTOS_API_URL=http://backend:8787
+      - NODE_ENV=production
+    depends_on: [backend]
+    networks: [agentos]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    networks: [agentos]
+
+networks:
+  agentos:
+
+volumes:
+  agentos_data:   # the SQLite database — this is your real business data, back it up
+  caddy_data:     # TLS certificates (auto-renewed by Caddy)
+  caddy_config:

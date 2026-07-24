@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>AgentOS — Super Admin</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+:root{
+  --bg-void:#0b0e14; --panel:rgba(255,255,255,0.045); --panel-solid:#12161f; --panel-strong:rgba(255,255,255,0.07);
+  --border:rgba(255,255,255,0.09); --border-soft:rgba(255,255,255,0.05);
+  --saffron:#c9a227; --saffron-soft:rgba(201,162,39,0.14);
+  --teal:#3fa796; --teal-soft:rgba(63,167,150,0.14);
+  --danger:#d65b5b; --danger-soft:rgba(214,91,91,0.14);
+  --text-1:#edeff3; --text-2:#9aa1b0; --text-3:#5f6675;
+}
+*{box-sizing:border-box}
+body{ margin:0; font-family:'Vazirmatn',system-ui,sans-serif; background:var(--bg-void); color:var(--text-1); min-height:100vh; }
+.wrap{ max-width:1100px; margin:0 auto; padding:24px; }
+
+/* login */
+.login-box{ max-width:380px; margin:80px auto; background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px; }
+.login-box h1{ font-size:16px; margin:0 0 4px; }
+.login-box p{ font-size:12px; color:var(--text-3); margin:0 0 20px; }
+.field{ margin-bottom:12px; }
+.field label{ font-size:11.5px; color:var(--text-3); display:block; margin-bottom:6px; }
+.field input{ width:100%; font-family:inherit; font-size:13px; background:var(--panel-solid); border:1px solid var(--border); border-radius:9px; padding:10px 12px; color:var(--text-1); outline:none; }
+.btn{ font-family:inherit; font-size:13px; font-weight:700; border-radius:9px; padding:10px 16px; cursor:pointer; border:none; }
+.btn-primary{ background:var(--saffron); color:#1a1200; width:100%; }
+.btn-ghost{ background:var(--panel); color:var(--text-1); border:1px solid var(--border); }
+.err{ font-size:12px; color:var(--danger); margin-top:10px; }
+.hint{ font-size:11px; color:var(--text-3); margin-top:14px; line-height:1.7; }
+
+/* app */
+.topbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+.brand{ font-weight:800; font-size:16px; display:flex; align-items:center; gap:8px; }
+.brand .mark{ width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,var(--saffron),#c97b1f); }
+.tabs{ display:flex; gap:6px; margin-bottom:20px; }
+.tab{ font-family:inherit; font-size:12.5px; font-weight:600; color:var(--text-3); background:var(--panel); border:1px solid var(--border-soft); padding:8px 16px; border-radius:100px; cursor:pointer; }
+.tab.active{ background:var(--saffron-soft); color:var(--saffron); border-color:rgba(232,163,61,.3); }
+
+.kpi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:26px; }
+.kpi-card{ background:var(--panel); border:1px solid var(--border-soft); border-radius:13px; padding:16px; }
+.kpi-card .n{ font-size:24px; font-weight:800; }
+.kpi-card .l{ font-size:11px; color:var(--text-3); margin-top:4px; }
+.kpi-card.ai-live .n{ color:var(--teal); }
+.kpi-card.ai-mock .n{ color:var(--danger); }
+
+table{ width:100%; border-collapse:collapse; font-size:12.5px; background:var(--panel); border:1px solid var(--border-soft); border-radius:12px; overflow:hidden; }
+th{ text-align:right; color:var(--text-3); font-weight:600; padding:10px 12px; border-bottom:1px solid var(--border); font-size:11px; }
+td{ padding:10px 12px; border-bottom:1px solid var(--border-soft); color:var(--text-2); }
+tr:last-child td{ border-bottom:none; }
+.badge{ font-size:10.5px; padding:2px 9px; border-radius:100px; font-weight:600; }
+.badge.active{ background:var(--teal-soft); color:var(--teal); }
+.badge.suspended{ background:var(--danger-soft); color:var(--danger); }
+.badge.trial{ background:var(--saffron-soft); color:var(--saffron); }
+select, .mini-btn{ font-family:inherit; font-size:11.5px; background:var(--panel-solid); border:1px solid var(--border); border-radius:7px; padding:5px 8px; color:var(--text-1); cursor:pointer; }
+.mini-btn.danger{ color:var(--danger); }
+.mini-btn.ok{ color:var(--teal); }
+
+.plan-card{ background:var(--panel); border:1px solid var(--border-soft); border-radius:14px; padding:18px; margin-bottom:14px; }
+.plan-card h3{ margin:0 0 12px; font-size:14px; }
+.plan-fields{ display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:12px; }
+.plan-fields label{ font-size:10.5px; color:var(--text-3); display:block; margin-bottom:5px; }
+.plan-fields input{ width:100%; font-family:inherit; font-size:12.5px; background:var(--panel-solid); border:1px solid var(--border); border-radius:7px; padding:7px 9px; color:var(--text-1); }
+
+.section-title{ font-size:13px; font-weight:700; margin:26px 0 12px; color:var(--text-2); }
+.loading{ text-align:center; padding:40px; color:var(--text-3); font-size:13px; }
+.audit-row{ font-size:11.5px; color:var(--text-2); padding:8px 0; border-bottom:1px solid var(--border-soft); display:flex; justify-content:space-between; gap:10px; }
+.audit-row b{ color:var(--text-1); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function(){
+  const API_BASE = window.localStorage.getItem('agentos_api_base') || 'http://localhost:8787';
+  let token = window.localStorage.getItem('agentos_admin_token') || null;
+  let tab = 'overview';
+  let cache = {};
+
+  const $app = document.getElementById('app');
+
+  async function api(path, opts) {
+    const res = await fetch(API_BASE + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts && opts.headers || {}) }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { status: res.status, data });
+    return data;
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function fmtDate(ts){ return ts ? new Date(ts).toLocaleString('fa-IR') : '—'; }
+
+  // ---------------- LOGIN ----------------
+  function renderLogin(errMsg){
+    $app.innerHTML = `
+      <div class="login-box">
+        <h1>🔒 AgentOS Super Admin</h1>
+        <p>فقط کاربرانی که SUPER_ADMIN_EMAIL روی بک‌اند تنظیم شدن، اجازه ورود دارن.</p>
+        <div class="field"><label>API Base URL</label><input id="apiBaseInput" value="${esc(API_BASE)}" /></div>
+        <div class="field"><label>ایمیل</label><input id="email" type="email" placeholder="admin@agentos.test" /></div>
+        <div class="field"><label>رمز عبور</label><input id="password" type="password" /></div>
+        <button class="btn btn-primary" id="loginBtn">ورود</button>
+        ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
+        <div class="hint">اگه هنوز ثبت‌نام نکردی: با همون ایمیلی که در متغیر محیطی <code>SUPER_ADMIN_EMAIL</code> بک‌اند گذاشتی، از طریق فرانت‌اند اصلی (یا مستقیم API) ثبت‌نام کن — به‌صورت خودکار Super Admin می‌شی.</div>
+      </div>`;
+    document.getElementById('loginBtn').addEventListener('click', doLogin);
+    document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  }
+
+  async function doLogin(){
+    const apiBaseInput = document.getElementById('apiBaseInput').value.trim().replace(/\/$/, '');
+    window.localStorage.setItem('agentos_api_base', apiBaseInput);
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    try{
+      const res = await fetch(apiBaseInput + '/api/auth/login', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password})
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'login_failed');
+      if (!data.user.isSuperAdmin) throw new Error('این کاربر Super Admin نیست');
+      token = data.token;
+      window.localStorage.setItem('agentos_admin_token', token);
+      location.reload();
+    }catch(e){ renderLogin(e.message); }
+  }
+
+  function logout(){
+    window.localStorage.removeItem('agentos_admin_token');
+    token = null;
+    renderLogin();
+  }
+
+  // ---------------- SHELL ----------------
+  function shell(bodyHtml){
+    $app.innerHTML = `
+      <div class="wrap">
+        <div class="topbar">
+          <div class="brand"><div class="mark"></div>AgentOS Super Admin</div>
+          <button class="btn btn-ghost" id="logoutBtn">خروج</button>
+        </div>
+        <div class="tabs">
+          <button class="tab ${tab==='overview'?'active':''}" data-tab="overview">نمای کلی (KPI)</button>
+          <button class="tab ${tab==='tenants'?'active':''}" data-tab="tenants">Tenantها</button>
+          <button class="tab ${tab==='plans'?'active':''}" data-tab="plans">پلن‌ها</button>
+          <button class="tab ${tab==='marketplace'?'active':''}" data-tab="marketplace">Marketplace</button>
+          <button class="tab ${tab==='audit'?'active':''}" data-tab="audit">Audit Log</button>
+        </div>
+        <div id="tabBody">${bodyHtml}</div>
+      </div>`;
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    Array.from(document.querySelectorAll('[data-tab]')).forEach(el => {
+      el.addEventListener('click', () => { tab = el.getAttribute('data-tab'); loadTab(); });
+    });
+  }
+
+  async function loadTab(){
+    shell(`<div class="loading">در حال بارگذاری...</div>`);
+    try{
+      if (tab === 'overview') await renderOverview();
+      else if (tab === 'tenants') await renderTenants();
+      else if (tab === 'plans') await renderPlans();
+      else if (tab === 'marketplace') await renderMarketplace();
+      else if (tab === 'audit') await renderAudit();
+    }catch(e){
+      if (e.status === 401 || e.status === 403) return logout();
+      shell(`<div class="loading">خطا: ${esc(e.message)}</div>`);
+    }
+  }
+
+  // ---------------- OVERVIEW ----------------
+  async function renderOverview(){
+    const k = await api('/api/admin/kpis');
+    const cards = [
+      { n:k.totalTenants, l:'کل Tenantها' },
+      { n:k.activeTenants, l:'Tenant فعال' },
+      { n:k.suspendedTenants, l:'Tenant معلق' },
+      { n:k.totalUsers, l:'کل کاربران' },
+      { n:k.activeTrials, l:'دوره آزمایشی فعال' },
+      { n:new Intl.NumberFormat('en-US').format(k.estimatedMRRToman)+' تومان', l:'MRR تخمینی' },
+      { n:k.agentActionsToday, l:'اکشن Agent (۲۴س گذشته)' },
+      { n:k.pendingApprovals, l:'در صف تایید' },
+      { n:k.totalContacts, l:'کل مخاطبین' },
+      { n:k.totalDeals, l:'کل معاملات' },
+      { n:k.totalInvoices, l:'کل فاکتورها' },
+      { n:k.marketplaceModules, l:'ماژول در Marketplace' }
+    ];
+    const aiCard = `<div class="kpi-card ${k.aiGatewayLive?'ai-live':'ai-mock'}"><div class="n">${k.aiGatewayLive?'✓ LIVE':'⚠ DEV_MOCK'}</div><div class="l">وضعیت AI Gateway</div></div>`;
+    shell(`
+      <div class="kpi-grid">
+        ${aiCard}
+        ${cards.map(c => `<div class="kpi-card"><div class="n">${esc(c.n)}</div><div class="l">${esc(c.l)}</div></div>`).join('')}
+      </div>
+      <div class="section-title">توزیع پلن‌ها</div>
+      <table><thead><tr><th>پلن</th><th>تعداد Tenant</th></tr></thead>
+      <tbody>${k.byPlan.map(p => `<tr><td>${esc(p.plan_key)}</td><td>${p.c}</td></tr>`).join('')}</tbody></table>
+    `);
+  }
+
+  // ---------------- TENANTS ----------------
+  async function renderTenants(){
+    const tenants = await api('/api/admin/tenants');
+    shell(`
+      <table>
+        <thead><tr><th>نام</th><th>پلن</th><th>وضعیت</th><th>کاربر</th><th>مخاطب</th><th>معامله</th><th>Trial</th><th>آخرین فعالیت</th><th>عملیات</th></tr></thead>
+        <tbody>${tenants.map(t => `
+          <tr>
+            <td><b>${esc(t.name)}</b></td>
+            <td>
+              <select data-plan-select="${t.id}">
+                <option value="free" ${t.planKey==='free'?'selected':''}>رایگان</option>
+                <option value="starter" ${t.planKey==='starter'?'selected':''}>استارتاپی</option>
+                <option value="pro" ${t.planKey==='pro'?'selected':''}>حرفه‌ای</option>
+                <option value="enterprise" ${t.planKey==='enterprise'?'selected':''}>سازمانی</option>
+              </select>
+            </td>
+            <td><span class="badge ${t.status}">${esc(t.status)}</span></td>
+            <td>${t.userCount}</td><td>${t.contactCount}</td><td>${t.dealCount}</td>
+            <td>${t.trialActive ? `<span class="badge trial">${t.trialDaysLeft} روز</span>` : '—'}</td>
+            <td style="font-size:10.5px">${fmtDate(t.lastActivityAt)}</td>
+            <td>
+              ${t.status==='active'
+                ? `<button class="mini-btn danger" data-suspend="${t.id}">تعلیق</button>`
+                : `<button class="mini-btn ok" data-activate="${t.id}">فعال‌سازی</button>`}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    `);
+    Array.from(document.querySelectorAll('[data-plan-select]')).forEach(el => {
+      el.addEventListener('change', async () => {
+        await api('/api/admin/tenants/' + el.getAttribute('data-plan-select'), { method:'PATCH', body: JSON.stringify({ planKey: el.value }) });
+        loadTab();
+      });
+    });
+    Array.from(document.querySelectorAll('[data-suspend]')).forEach(el => {
+      el.addEventListener('click', async () => {
+        await api('/api/admin/tenants/' + el.getAttribute('data-suspend'), { method:'PATCH', body: JSON.stringify({ status:'suspended' }) });
+        loadTab();
+      });
+    });
+    Array.from(document.querySelectorAll('[data-activate]')).forEach(el => {
+      el.addEventListener('click', async () => {
+        await api('/api/admin/tenants/' + el.getAttribute('data-activate'), { method:'PATCH', body: JSON.stringify({ status:'active' }) });
+        loadTab();
+      });
+    });
+  }
+
+  // ---------------- PLANS ----------------
+  const FEATURE_LABELS = {
+    team:'مدیریت تیم', voice:'گفتگوی صوتی', reports:'گزارش اکسل/PDF',
+    marketplacePublish:'انتشار در Marketplace', customAgentPersona:'شخصی‌سازی شخصیت Agent',
+    sso:'SSO', whiteLabel:'White-label', dedicatedSLA:'SLA اختصاصی'
+  };
+  async function renderPlans(){
+    const plans = await api('/api/admin/plans');
+    shell(`
+      ${plans.map(p => `
+        <div class="plan-card">
+          <h3>${esc(p.name)} <span style="color:var(--text-3);font-size:11px">(${esc(p.key)})</span></h3>
+          <div class="plan-fields">
+            <div><label>قیمت ماهانه (تومان)</label><input type="number" step="1000" data-field="price_monthly_toman" value="${p.price_monthly_toman}" /></div>
+            <div><label>قیمت سالانه (تومان)</label><input type="number" step="1000" data-field="price_yearly_toman" value="${p.price_yearly_toman}" /></div>
+            <div><label>سقف کاربر (خالی=نامحدود)</label><input type="number" data-field="seats_limit" value="${p.seats_limit ?? ''}" /></div>
+            <div><label>سقف ماژول (خالی=نامحدود)</label><input type="number" data-field="modules_limit" value="${p.modules_limit ?? ''}" /></div>
+            <div><label>سقف اکشن Agent/ماه</label><input type="number" data-field="agent_actions_limit" value="${p.agent_actions_limit ?? ''}" /></div>
+          </div>
+          <div class="plan-fields" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+            ${Object.keys(FEATURE_LABELS).map(fk => `
+              <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-2);cursor:pointer">
+                <input type="checkbox" data-feature="${fk}" ${p.features[fk] ? 'checked' : ''} /> ${FEATURE_LABELS[fk]}
+              </label>`).join('')}
+          </div>
+          <button class="btn btn-ghost" data-save-plan="${p.key}" style="margin-top:12px">ذخیره تغییرات</button>
+        </div>
+      `).join('')}
+    `);
+    Array.from(document.querySelectorAll('[data-save-plan]')).forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const card = btn.closest('.plan-card');
+        const body = {};
+        Array.from(card.querySelectorAll('[data-field]')).forEach(inp => {
+          const f = inp.getAttribute('data-field');
+          const camel = f.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+          body[camel] = inp.value === '' ? null : Number(inp.value);
+        });
+        const features = {};
+        Array.from(card.querySelectorAll('[data-feature]')).forEach(cb => { features[cb.getAttribute('data-feature')] = cb.checked; });
+        body.features = features;
+        await api('/api/admin/plans/' + btn.getAttribute('data-save-plan'), { method:'PATCH', body: JSON.stringify(body) });
+        btn.textContent = '✓ ذخیره شد';
+        setTimeout(() => loadTab(), 700);
+      });
+    });
+  }
+
+  // ---------------- MARKETPLACE MODERATION ----------------
+  async function renderMarketplace(){
+    const items = await api('/api/admin/marketplace');
+    shell(`
+      <table>
+        <thead><tr><th>نام</th><th>منتشرکننده</th><th>نصب‌شده</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+        <tbody>${items.map(it => `
+          <tr>
+            <td><b>${esc(it.name)}</b></td>
+            <td>${esc(it.publisherName)}</td>
+            <td>${it.installs}</td>
+            <td><span class="badge ${it.enabled?'active':'suspended'}">${it.enabled?'فعال':'مخفی'}</span></td>
+            <td><button class="mini-btn ${it.enabled?'danger':'ok'}" data-toggle-mp="${it.id}" data-enabled="${it.enabled}">${it.enabled?'مخفی کن':'فعال کن'}</button></td>
+          </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-3)">هنوز ماژولی منتشر نشده</td></tr>'}
+        </tbody>
+      </table>
+    `);
+    Array.from(document.querySelectorAll('[data-toggle-mp]')).forEach(el => {
+      el.addEventListener('click', async () => {
+        const enabled = el.getAttribute('data-enabled') === 'true';
+        await api('/api/admin/marketplace/' + el.getAttribute('data-toggle-mp'), { method:'PATCH', body: JSON.stringify({ enabled: !enabled }) });
+        loadTab();
+      });
+    });
+  }
+
+  // ---------------- AUDIT ----------------
+  async function renderAudit(){
+    const rows = await api('/api/admin/audit');
+    shell(`
+      <div>${rows.map(r => `
+        <div class="audit-row">
+          <span><b>${esc(r.action)}</b> — ${esc(r.entity||'')} <span style="color:var(--text-3)">(${esc(r.actor_type)}, tenant: ${esc(r.tenant_id)})</span></span>
+          <span style="font-size:10.5px;color:var(--text-3)">${fmtDate(r.created_at)}</span>
+        </div>`).join('') || '<div class="loading">هنوز رویدادی ثبت نشده</div>'}
+      </div>
+    `);
+  }
+
+  // ---------------- boot ----------------
+  if (!token) renderLogin();
+  else loadTab();
+})();
+</script>
+</body>
+</html>

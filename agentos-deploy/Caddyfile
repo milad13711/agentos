@@ -1,0 +1,10 @@
+# Replace with your real domain. Caddy automatically gets and renews a
+# Let's Encrypt TLS certificate for it — no manual cert management needed.
+your-domain.com {
+  reverse_proxy web:3000
+}
+
+# For local testing without a domain, comment the block above and use:
+# :80 {
+#   reverse_proxy web:3000
+# }
