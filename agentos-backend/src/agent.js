@@ -185,22 +185,43 @@ function historyToMessages(history) {
     .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: String(m.text).slice(0, 2000) }));
 }
 
+// AI Gateway calls previously had no timeout — a slow/unresponsive upstream
+// (seen in practice with GapGPT) would leave the request hanging forever
+// with no error, which the frontend showed as a stuck "در حال پردازش...".
+// 25s gives a real model response plenty of room while still failing loudly.
+const AI_GATEWAY_TIMEOUT_MS = 25_000;
+function withTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+}
+
 async function callAnthropic(systemPrompt, userText, history) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: process.env.AGENTOS_MODEL || 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [...historyToMessages(history), { role: 'user', content: userText }]
-    })
-  });
+  const { signal, cancel } = withTimeout(AI_GATEWAY_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: process.env.AGENTOS_MODEL || 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [...historyToMessages(history), { role: 'user', content: userText }]
+      }),
+      signal
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`AI Gateway timeout (Anthropic) after ${AI_GATEWAY_TIMEOUT_MS}ms`);
+    throw e;
+  } finally {
+    cancel();
+  }
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`AI Gateway error (Anthropic) ${res.status}: ${errText}`);
@@ -235,14 +256,24 @@ async function callOpenAI(systemPrompt, userText, history) {
     body.response_format = { type: 'json_object' };
   }
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(body)
-  });
+  const { signal, cancel } = withTimeout(AI_GATEWAY_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body),
+      signal
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`AI Gateway timeout (OpenAI-compatible, ${baseUrl}) after ${AI_GATEWAY_TIMEOUT_MS}ms`);
+    throw e;
+  } finally {
+    cancel();
+  }
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`AI Gateway error (OpenAI-compatible, ${baseUrl}) ${res.status}: ${errText}`);
