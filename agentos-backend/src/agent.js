@@ -12,6 +12,7 @@
 // real model in production — see README.
 
 const { db, uid, now } = require('./db');
+const { dispatch } = require('./actions');
 
 const STAGES = ['سرنخ', 'در حال مذاکره', 'پیشنهاد ارسال‌شده', 'برنده', 'ازدست‌رفته'];
 const SENSITIVE_ACTIONS = new Set([
@@ -318,11 +319,9 @@ function executeAction(tenantId, userId, action, params) {
   const t = now();
   switch (action) {
     case 'create_contact': {
-      const id = uid();
-      db.prepare('INSERT INTO contacts (id, tenant_id, name, phone, company, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(id, tenantId, params.name || 'بدون نام', params.phone || '', params.company || '', userId, t);
-      audit(tenantId, 'agent', userId, 'create_contact', 'contact:' + id, params);
-      return { type: 'contact', data: db.prepare('SELECT * FROM contacts WHERE id = ?').get(id) };
+      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', params);
+      audit(tenantId, 'agent', userId, 'create_contact', 'contact:' + data.id, params);
+      return { type: 'contact', data };
     }
     case 'create_deal': {
       const id = uid();

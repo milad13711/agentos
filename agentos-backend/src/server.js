@@ -8,6 +8,7 @@ const { buildXlsx } = require('./xlsx-writer');
 const { db, uid, now } = require('./db');
 const { hashPassword, verifyPassword, signToken, authenticate } = require('./auth');
 const { act, resolvePending, audit, resolveProvider } = require('./agent');
+const { dispatch } = require('./actions');
 const { createPaymentRequest, verifyPayment } = require('./billing');
 
 const PORT = process.env.PORT || 8787;
@@ -286,11 +287,9 @@ route('POST', '/api/contacts', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { name, phone, company } = await readBody(req);
   if (!name) return send(res, 400, { error: 'name_required' });
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO contacts (id, tenant_id, name, phone, company, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, auth.tenantId, name, phone || '', company || '', auth.userId, t);
-  audit(auth.tenantId, 'user', auth.userId, 'create_contact', 'contact:' + id, { name });
-  send(res, 201, db.prepare('SELECT * FROM contacts WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'contact.created', { name, phone, company });
+  audit(auth.tenantId, 'user', auth.userId, 'create_contact', 'contact:' + data.id, { name });
+  send(res, 201, data);
 });
 route('DELETE', '/api/contacts/:id', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
