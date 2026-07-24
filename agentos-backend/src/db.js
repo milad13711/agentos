@@ -118,32 +118,11 @@ CREATE TABLE IF NOT EXISTS marketplace_modules (
   created_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS audit_logs (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  actor_type TEXT NOT NULL, -- user | agent
-  actor_id TEXT,
-  action TEXT NOT NULL,
-  entity TEXT,
-  detail_json TEXT,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_audit_tenant ON audit_logs(tenant_id);
+-- audit_logs and pending_actions were replaced by the events table below (phase 1 —
+-- docs/phase1-event-schema-agent-roles.md). No longer created for fresh
+-- installs; on databases that still have them from before this migration,
+-- run scripts/backfill-audit-to-events.js to migrate + drop them.
 
--- Human-in-the-loop approval queue for sensitive Agent actions
--- (issue_invoice, delete_deal, delete_contact, build_module, publish_module, install_module).
-CREATE TABLE IF NOT EXISTS pending_actions (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  domain TEXT NOT NULL,
-  params_json TEXT NOT NULL,
-  reply TEXT,
-  status TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
-  created_at INTEGER NOT NULL,
-  resolved_at INTEGER
-);
 -- Team tasks: reminders, follow-ups, and delegation between personnel of the same tenant.
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
@@ -179,12 +158,10 @@ CREATE TABLE IF NOT EXISTS subscription_payments (
 CREATE INDEX IF NOT EXISTS idx_payments_tenant ON subscription_payments(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_authority ON subscription_payments(authority);
 
-CREATE INDEX IF NOT EXISTS idx_pending_tenant ON pending_actions(tenant_id);
-
--- Phase 1: unified write log, replacing audit_logs + pending_actions once the
--- migration in docs/phase1-event-schema-agent-roles.md is complete. Additive
--- for now — audit_logs/pending_actions keep working unchanged until every
--- action is migrated (see checklist in that doc).
+-- Phase 1: unified write log, replacing audit_logs + pending_actions
+-- (docs/phase1-event-schema-agent-roles.md). Every mutation and audit-trail
+-- entry goes here now — see actions.js (dispatch/resolveEvent) and
+-- agent.js's audit().
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,

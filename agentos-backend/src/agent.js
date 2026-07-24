@@ -12,12 +12,41 @@
 // real model in production — see README.
 
 const { db, uid, now } = require('./db');
-const { dispatch, STAGES, findDeal, findContact, findModule, findMarketItem, findTeamMember } = require('./actions');
+const { dispatch, resolveEvent, STAGES, findDeal, findContact, findModule, findMarketItem, findTeamMember } = require('./actions');
 
 const SENSITIVE_ACTIONS = new Set([
   'issue_invoice', 'delete_deal', 'delete_contact',
   'build_module', 'delete_module', 'publish_module', 'install_module'
 ]);
+
+// Maps the Agent's action vocabulary to actions.js event types, only for
+// sensitive actions (the non-sensitive ones already call dispatch() inline
+// in executeAction below with their event type hardcoded).
+const SENSITIVE_ACTION_TYPE = {
+  delete_deal: 'deal.deleted',
+  delete_contact: 'contact.deleted',
+  issue_invoice: 'invoice.issued',
+  build_module: 'module.created',
+  delete_module: 'module.deleted',
+  publish_module: 'marketplace.published',
+  install_module: 'module.installed',
+};
+// event type -> the `result.type` label the frontends already expect
+// (predates events; kept stable so no frontend code needs to change).
+const RESULT_TYPE_OF = {
+  'deal.deleted': 'deleted',
+  'contact.deleted': 'deleted',
+  'invoice.issued': 'invoice',
+  'module.created': 'module_created',
+  'module.deleted': 'deleted',
+  'marketplace.published': 'module_published',
+  'module.installed': 'module_created',
+};
+function toLegacyResult(eventType, data) {
+  if (!data) return null;
+  if (data.type === 'plan_limit') return data; // module.created's plan-limit case is already {type, data}
+  return { type: RESULT_TYPE_OF[eventType], data };
+}
 const DOMAIN_OF = {
   create_contact: 'sales', create_deal: 'sales', update_deal_stage: 'sales',
   delete_deal: 'sales', delete_contact: 'sales', list_contacts: 'sales',
@@ -284,10 +313,18 @@ function findTaskByTitle(tenantId, title) {
     .get(tenantId, `%${title}%`);
 }
 
+// General-purpose audit trail, now backed by `events` (single source of
+// truth — see docs/phase1-event-schema-agent-roles.md). Used for business
+// events that aren't a registry-dispatched CRUD action (team/billing/admin
+// changes, approval decisions, etc). Registry actions log their own event
+// inside dispatch()/resolveEvent(); callers there should NOT also call
+// audit() for the same fact — that would just re-create the audit_logs
+// dual-write problem this migration exists to remove.
 function audit(tenantId, actorType, actorId, action, entity, detail) {
-  db.prepare(`INSERT INTO audit_logs (id, tenant_id, actor_type, actor_id, action, entity, detail_json, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(uid(), tenantId, actorType, actorId || null, action, entity || null, JSON.stringify(detail || {}), now());
+  const [entityType, entityId] = entity ? entity.split(':') : [null, null];
+  db.prepare(`INSERT INTO events (id, tenant_id, type, actor_type, actor_id, actor_role, entity_type, entity_id, payload_json, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)`)
+    .run(uid(), tenantId, action, actorType, actorId || null, actorType, entityType || null, entityId || null, JSON.stringify(detail || {}), now());
 }
 
 // Executes a NON-sensitive or an approved action against the real DB.
@@ -297,71 +334,26 @@ function executeAction(tenantId, userId, action, params) {
   switch (action) {
     case 'create_contact': {
       const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', params);
-      audit(tenantId, 'agent', userId, 'create_contact', 'contact:' + data.id, params);
       return { type: 'contact', data };
     }
     case 'create_deal': {
       const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.created', params);
-      audit(tenantId, 'agent', userId, 'create_deal', 'deal:' + data.id, params);
       return { type: 'deal', data };
     }
     case 'update_deal_stage': {
       const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.stage_changed', params);
       if (!data) return null;
-      audit(tenantId, 'agent', userId, 'update_deal_stage', 'deal:' + data.id, params);
       return { type: 'deal', data };
-    }
-    case 'delete_deal': {
-      const deal = findDeal(tenantId, null, params.dealTitle);
-      if (!deal) return null;
-      db.prepare('DELETE FROM deals WHERE id = ?').run(deal.id);
-      audit(tenantId, 'agent', userId, 'delete_deal', 'deal:' + deal.id, params);
-      return { type: 'deleted', data: { label: deal.title } };
-    }
-    case 'delete_contact': {
-      const c = findContact(tenantId, null, params.name);
-      if (!c) return null;
-      db.prepare('DELETE FROM contacts WHERE id = ?').run(c.id);
-      audit(tenantId, 'agent', userId, 'delete_contact', 'contact:' + c.id, params);
-      return { type: 'deleted', data: { label: c.name } };
-    }
-    case 'issue_invoice': {
-      const deal = findDeal(tenantId, null, params.dealTitle);
-      const amount = params.amount != null ? Number(params.amount) : (deal ? deal.amount : null);
-      const id = uid();
-      db.prepare('INSERT INTO invoices (id, tenant_id, deal_title, amount, created_by, created_at) VALUES (?,?,?,?,?,?)')
-        .run(id, tenantId, deal ? deal.title : (params.dealTitle || 'نامشخص'), amount, userId, t);
-      audit(tenantId, 'agent', userId, 'issue_invoice', 'invoice:' + id, params);
-      return { type: 'invoice', data: db.prepare('SELECT * FROM invoices WHERE id = ?').get(id) };
     }
     case 'list_invoices':
       return { type: 'invoices_table', data: db.prepare('SELECT * FROM invoices WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId) };
-    case 'build_module': {
-      const tenant = db.prepare('SELECT plan_key FROM tenants WHERE id = ?').get(tenantId);
-      const plan = db.prepare('SELECT modules_limit FROM plans WHERE key = ?').get(tenant.plan_key);
-      if (plan && plan.modules_limit != null) {
-        const count = db.prepare('SELECT COUNT(*) c FROM custom_modules WHERE tenant_id = ?').get(tenantId).c;
-        if (count >= plan.modules_limit) return { type: 'plan_limit', data: { limit: plan.modules_limit, feature: 'modules' } };
-      }
-      const fields = Array.isArray(params.fields) && params.fields.length ? params.fields : [{ key: 'note', label: 'یادداشت', type: 'text' }];
-      const id = uid();
-      db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(id, tenantId, params.moduleName || 'ماژول جدید', params.entityLabel || params.moduleName || 'رکورد', JSON.stringify(fields), userId, t);
-      audit(tenantId, 'agent', userId, 'build_module', 'module:' + id, params);
-      return { type: 'module_created', data: db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id) };
-    }
-    case 'delete_module': {
-      const mod = findModule(tenantId, null, params.moduleName);
-      if (!mod) return null;
-      db.prepare('DELETE FROM module_records WHERE module_id = ?').run(mod.id);
-      db.prepare('DELETE FROM custom_modules WHERE id = ?').run(mod.id);
-      audit(tenantId, 'agent', userId, 'delete_module', 'module:' + mod.id, params);
-      return { type: 'deleted', data: { label: mod.name } };
-    }
+    // delete_deal, delete_contact, issue_invoice, build_module, delete_module
+    // are sensitive — they never reach executeAction() directly. act() sends
+    // them through dispatch() (queues a pending_approval event); resolvePending()
+    // applies them via resolveEvent() once approved. See SENSITIVE_ACTION_TYPE below.
     case 'module_create_record': {
       const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'module.record_created', params);
       if (!data) return null;
-      audit(tenantId, 'agent', userId, 'module_create_record', 'module_record:' + data.record.id, params);
       return { type: 'module_record', data };
     }
     case 'module_list_records': {
@@ -370,36 +362,10 @@ function executeAction(tenantId, userId, action, params) {
       const records = db.prepare('SELECT * FROM module_records WHERE module_id = ? ORDER BY created_at DESC').all(mod.id);
       return { type: 'module_records_table', data: { module: mod, records } };
     }
-    case 'publish_module': {
-      const mod = findModule(tenantId, null, params.moduleName);
-      if (!mod) return null;
-      const existing = db.prepare('SELECT * FROM marketplace_modules WHERE name = ? AND published_by_tenant = ?').get(mod.name, tenantId);
-      if (existing) {
-        db.prepare('UPDATE marketplace_modules SET fields_json = ? WHERE id = ?').run(mod.fields_json, existing.id);
-        audit(tenantId, 'agent', userId, 'publish_module', 'marketplace:' + existing.id, params);
-        return { type: 'module_published', data: db.prepare('SELECT * FROM marketplace_modules WHERE id = ?').get(existing.id) };
-      }
-      const id = uid();
-      db.prepare('INSERT INTO marketplace_modules (id, name, entity_label, fields_json, published_by_tenant, installs, created_at) VALUES (?,?,?,?,?,0,?)')
-        .run(id, mod.name, mod.entity_label, mod.fields_json, tenantId, t);
-      audit(tenantId, 'agent', userId, 'publish_module', 'marketplace:' + id, params);
-      return { type: 'module_published', data: db.prepare('SELECT * FROM marketplace_modules WHERE id = ?').get(id) };
-    }
-    case 'install_module': {
-      const item = findMarketItem(null, params.moduleName);
-      if (!item) return null;
-      const id = uid();
-      db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(id, tenantId, item.name, item.entity_label, item.fields_json, userId, t);
-      db.prepare('UPDATE marketplace_modules SET installs = installs + 1 WHERE id = ?').run(item.id);
-      audit(tenantId, 'agent', userId, 'install_module', 'module:' + id, params);
-      return { type: 'module_created', data: db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id) };
-    }
     case 'list_marketplace':
       return { type: 'marketplace_table', data: db.prepare('SELECT * FROM marketplace_modules WHERE enabled = 1 ORDER BY created_at DESC').all() };
     case 'create_task': {
       const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'task.created', params);
-      audit(tenantId, 'agent', userId, 'create_task', 'task:' + data.id, params);
       return { type: 'task', data };
     }
     case 'list_tasks': {
@@ -480,33 +446,33 @@ async function act(tenantId, userId, text, history) {
         };
       }
     }
-    const id = uid();
-    db.prepare(`INSERT INTO pending_actions (id, tenant_id, user_id, action, domain, params_json, reply, status, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(id, tenantId, userId, action, domain, JSON.stringify(params), reply, 'pending', now());
-    return { requiresApproval: true, pendingId: id, action, domain, params, reply };
+    const type = SENSITIVE_ACTION_TYPE[action];
+    const { eventId } = dispatch({ tenantId, userId, role: 'agent' }, type, params);
+    return { requiresApproval: true, pendingId: eventId, action, domain, params, reply };
   }
 
   const result = executeAction(tenantId, userId, action, params);
   return { requiresApproval: false, action, domain, params, reply, result };
 }
 
+// pendingId is an events.id (see actions.js — dispatch() queues sensitive
+// actions there as status='pending_approval' instead of the old
+// pending_actions table).
 function resolvePending(tenantId, userId, pendingId, approve) {
-  const pending = db.prepare('SELECT * FROM pending_actions WHERE id = ? AND tenant_id = ?').get(pendingId, tenantId);
-  if (!pending) return { error: 'not_found' };
-  if (pending.status !== 'pending') return { error: 'already_resolved', status: pending.status };
+  const ev = db.prepare('SELECT * FROM events WHERE id = ? AND tenant_id = ?').get(pendingId, tenantId);
+  if (!ev) return { error: 'not_found' };
+  if (ev.status !== 'pending_approval') return { error: 'already_resolved', status: ev.status };
+  const params = JSON.parse(ev.payload_json);
 
   if (!approve) {
-    db.prepare('UPDATE pending_actions SET status = ?, resolved_at = ? WHERE id = ?').run('rejected', now(), pendingId);
-    audit(tenantId, 'user', userId, 'reject_pending_action', pending.action, JSON.parse(pending.params_json));
+    resolveEvent(tenantId, pendingId, false);
+    audit(tenantId, 'user', userId, 'reject_pending_action', ev.type, params);
     return { status: 'rejected' };
   }
 
-  const params = JSON.parse(pending.params_json);
-  const result = executeAction(tenantId, userId, pending.action, params);
-  db.prepare('UPDATE pending_actions SET status = ?, resolved_at = ? WHERE id = ?').run(result ? 'approved' : 'failed', now(), pendingId);
-  audit(tenantId, 'user', userId, 'approve_pending_action', pending.action, params);
-  return { status: result ? 'approved' : 'failed', result };
+  const outcome = resolveEvent(tenantId, pendingId, true);
+  audit(tenantId, 'user', userId, 'approve_pending_action', ev.type, params);
+  return { status: outcome.status, result: toLegacyResult(ev.type, outcome.data) };
 }
 
 module.exports = { act, resolvePending, executeAction, SENSITIVE_ACTIONS, audit, resolveProvider };

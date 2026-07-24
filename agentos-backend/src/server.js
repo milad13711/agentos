@@ -248,7 +248,6 @@ route('POST', '/api/tasks', async (req, res) => {
     if (!assignee) return send(res, 400, { error: 'invalid_assignee' });
   }
   const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'task.created', { title, description, assigneeId, dueAt, relatedEntity });
-  audit(auth.tenantId, 'user', auth.userId, 'create_task', 'task:' + data.id, { title, assigneeId });
   send(res, 201, data);
 });
 
@@ -285,15 +284,12 @@ route('POST', '/api/contacts', async (req, res) => {
   const { name, phone, company } = await readBody(req);
   if (!name) return send(res, 400, { error: 'name_required' });
   const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'contact.created', { name, phone, company });
-  audit(auth.tenantId, 'user', auth.userId, 'create_contact', 'contact:' + data.id, { name });
   send(res, 201, data);
 });
 route('DELETE', '/api/contacts/:id', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  const c = db.prepare('SELECT * FROM contacts WHERE id = ? AND tenant_id = ?').get(params.id, auth.tenantId);
-  if (!c) return send(res, 404, { error: 'not_found' });
-  db.prepare('DELETE FROM contacts WHERE id = ?').run(c.id);
-  audit(auth.tenantId, 'user', auth.userId, 'delete_contact', 'contact:' + c.id, {});
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'contact.deleted', { id: params.id });
+  if (!data) return send(res, 404, { error: 'not_found' });
   send(res, 200, { deleted: true });
 });
 
@@ -307,7 +303,6 @@ route('POST', '/api/deals', async (req, res) => {
   const { title, contactName, amount, stage } = await readBody(req);
   if (!title) return send(res, 400, { error: 'title_required' });
   const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.created', { title, contactName, amount, stage });
-  audit(auth.tenantId, 'user', auth.userId, 'create_deal', 'deal:' + data.id, { title });
   send(res, 201, data);
 });
 route('PATCH', '/api/deals/:id/stage', async (req, res, params) => {
@@ -315,15 +310,12 @@ route('PATCH', '/api/deals/:id/stage', async (req, res, params) => {
   const { stage } = await readBody(req);
   const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.stage_changed', { id: params.id, stage });
   if (!data) return send(res, 404, { error: 'not_found' });
-  audit(auth.tenantId, 'user', auth.userId, 'update_deal_stage', 'deal:' + data.id, { stage });
   send(res, 200, data);
 });
 route('DELETE', '/api/deals/:id', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND tenant_id = ?').get(params.id, auth.tenantId);
-  if (!deal) return send(res, 404, { error: 'not_found' });
-  db.prepare('DELETE FROM deals WHERE id = ?').run(deal.id);
-  audit(auth.tenantId, 'user', auth.userId, 'delete_deal', 'deal:' + deal.id, {});
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.deleted', { id: params.id });
+  if (!data) return send(res, 404, { error: 'not_found' });
   send(res, 200, { deleted: true });
 });
 
@@ -335,11 +327,8 @@ route('GET', '/api/invoices', async (req, res) => {
 route('POST', '/api/invoices', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { dealTitle, amount } = await readBody(req);
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO invoices (id, tenant_id, deal_title, amount, created_by, created_at) VALUES (?,?,?,?,?,?)')
-    .run(id, auth.tenantId, dealTitle || '', amount != null ? Number(amount) : null, auth.userId, t);
-  audit(auth.tenantId, 'user', auth.userId, 'issue_invoice', 'invoice:' + id, { dealTitle });
-  send(res, 201, db.prepare('SELECT * FROM invoices WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'invoice.issued', { dealTitle, amount });
+  send(res, 201, data);
 });
 
 // ---- custom modules (Module Builder) ----
@@ -354,25 +343,15 @@ route('POST', '/api/modules', async (req, res) => {
   const { name, entityLabel, fields } = await readBody(req);
   if (!name || !Array.isArray(fields) || !fields.length) return send(res, 400, { error: 'name_and_fields_required' });
 
-  const tenant = db.prepare('SELECT plan_key FROM tenants WHERE id = ?').get(auth.tenantId);
-  const plan = db.prepare('SELECT modules_limit FROM plans WHERE key = ?').get(tenant.plan_key);
-  if (plan && plan.modules_limit != null) {
-    const count = db.prepare('SELECT COUNT(*) c FROM custom_modules WHERE tenant_id = ?').get(auth.tenantId).c;
-    if (count >= plan.modules_limit) return send(res, 402, { error: 'plan_limit_reached', message: `پلن فعلی حداکثر ${plan.modules_limit} ماژول اجازه می‌ده.` });
-  }
-
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, auth.tenantId, name, entityLabel || name, JSON.stringify(fields), auth.userId, t);
-  audit(auth.tenantId, 'user', auth.userId, 'build_module', 'module:' + id, { name });
-  send(res, 201, { ...db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id), fields });
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'module.created', { name, entityLabel, fields });
+  if (data.type === 'plan_limit') return send(res, 402, { error: 'plan_limit_reached', message: `پلن فعلی حداکثر ${data.data.limit} ماژول اجازه می‌ده.` });
+  send(res, 201, { ...data, fields: JSON.parse(data.fields_json) });
 });
 route('POST', '/api/modules/:id/records', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { values } = await readBody(req);
   const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'module.record_created', { moduleId: params.id, values });
   if (!data) return send(res, 404, { error: 'not_found' });
-  audit(auth.tenantId, 'user', auth.userId, 'module_create_record', 'module_record:' + data.record.id, { module: data.module.name });
   send(res, 201, data.record);
 });
 route('GET', '/api/modules/:id/records', async (req, res, params) => {
@@ -390,26 +369,15 @@ route('GET', '/api/marketplace', async (req, res) => {
 route('POST', '/api/marketplace/publish', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
   const { moduleId } = await readBody(req);
-  const mod = db.prepare('SELECT * FROM custom_modules WHERE id = ? AND tenant_id = ?').get(moduleId, auth.tenantId);
-  if (!mod) return send(res, 404, { error: 'not_found' });
-  const existing = db.prepare('SELECT * FROM marketplace_modules WHERE name = ? AND published_by_tenant = ?').get(mod.name, auth.tenantId);
-  const id = existing ? existing.id : uid();
-  if (existing) db.prepare('UPDATE marketplace_modules SET fields_json = ? WHERE id = ?').run(mod.fields_json, id);
-  else db.prepare('INSERT INTO marketplace_modules (id, name, entity_label, fields_json, published_by_tenant, installs, created_at) VALUES (?,?,?,?,?,0,?)')
-    .run(id, mod.name, mod.entity_label, mod.fields_json, auth.tenantId, now());
-  audit(auth.tenantId, 'user', auth.userId, 'publish_module', 'marketplace:' + id, { name: mod.name });
-  send(res, 200, db.prepare('SELECT * FROM marketplace_modules WHERE id = ?').get(id));
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'marketplace.published', { moduleId });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  send(res, 200, data);
 });
 route('POST', '/api/marketplace/:id/install', async (req, res, params) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  const item = db.prepare('SELECT * FROM marketplace_modules WHERE id = ?').get(params.id);
-  if (!item || !item.enabled) return send(res, 404, { error: 'not_found' });
-  const id = uid(); const t = now();
-  db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, auth.tenantId, item.name, item.entity_label, item.fields_json, auth.userId, t);
-  db.prepare('UPDATE marketplace_modules SET installs = installs + 1 WHERE id = ?').run(item.id);
-  audit(auth.tenantId, 'user', auth.userId, 'install_module', 'module:' + id, { name: item.name });
-  send(res, 201, { ...db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id), fields: JSON.parse(item.fields_json) });
+  const { data } = dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'module.installed', { marketItemId: params.id });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  send(res, 201, { ...data, fields: JSON.parse(data.fields_json) });
 });
 
 // ---- agent (chat-first entrypoint) ----
@@ -436,7 +404,7 @@ route('POST', '/api/agent/pending/:id/reject', async (req, res, params) => {
 });
 route('GET', '/api/agent/pending', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  send(res, 200, db.prepare(`SELECT * FROM pending_actions WHERE tenant_id = ? AND status = 'pending' ORDER BY created_at DESC`).all(auth.tenantId));
+  send(res, 200, db.prepare(`SELECT * FROM events WHERE tenant_id = ? AND status = 'pending_approval' ORDER BY created_at DESC`).all(auth.tenantId));
 });
 
 // ---- billing (tenant-scoped) ----
@@ -497,8 +465,8 @@ route('GET', '/api/admin/kpis', async (req, res) => {
   const dayAgo = now() - 86400000;
   const sevenDaysAgo = now() - 7 * 86400000;
   const activeTrials = db.prepare(`SELECT COUNT(*) c FROM tenants WHERE trial_start IS NOT NULL AND trial_start > ?`).get(sevenDaysAgo).c;
-  const agentActionsToday = db.prepare(`SELECT COUNT(*) c FROM audit_logs WHERE actor_type = 'agent' AND created_at > ?`).get(dayAgo).c;
-  const pendingApprovals = db.prepare(`SELECT COUNT(*) c FROM pending_actions WHERE status = 'pending'`).get().c;
+  const agentActionsToday = db.prepare(`SELECT COUNT(*) c FROM events WHERE actor_type = 'agent' AND created_at > ?`).get(dayAgo).c;
+  const pendingApprovals = db.prepare(`SELECT COUNT(*) c FROM events WHERE status = 'pending_approval'`).get().c;
   const totalContacts = db.prepare('SELECT COUNT(*) c FROM contacts').get().c;
   const totalDeals = db.prepare('SELECT COUNT(*) c FROM deals').get().c;
   const totalInvoices = db.prepare('SELECT COUNT(*) c FROM invoices').get().c;
@@ -524,7 +492,7 @@ route('GET', '/api/admin/tenants', async (req, res) => {
     const userCount = db.prepare('SELECT COUNT(*) c FROM users WHERE tenant_id = ?').get(t.id).c;
     const contactCount = db.prepare('SELECT COUNT(*) c FROM contacts WHERE tenant_id = ?').get(t.id).c;
     const dealCount = db.prepare('SELECT COUNT(*) c FROM deals WHERE tenant_id = ?').get(t.id).c;
-    const lastActivity = db.prepare('SELECT created_at FROM audit_logs WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 1').get(t.id);
+    const lastActivity = db.prepare('SELECT created_at FROM events WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 1').get(t.id);
     const trialLeft = t.trial_start ? Math.max(0, 7 - Math.floor((now() - t.trial_start) / 86400000)) : null;
     return {
       id: t.id, name: t.name, planKey: t.plan_key, status: t.status, aiProvider: t.ai_provider,
@@ -542,7 +510,7 @@ route('GET', '/api/admin/tenants/:id', async (req, res, params) => {
   if (!tenant) return send(res, 404, { error: 'not_found' });
   const users = db.prepare('SELECT id, name, email, role, is_super_admin, created_at FROM users WHERE tenant_id = ?').all(tenant.id);
   const modules = db.prepare('SELECT id, name, entity_label, created_at FROM custom_modules WHERE tenant_id = ?').all(tenant.id);
-  const recentAudit = db.prepare('SELECT * FROM audit_logs WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 25').all(tenant.id);
+  const recentAudit = db.prepare('SELECT * FROM events WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 25').all(tenant.id);
   send(res, 200, { tenant, users, modules, recentAudit });
 });
 
@@ -628,7 +596,7 @@ route('PATCH', '/api/admin/marketplace/:id', async (req, res, params) => {
 
 route('GET', '/api/admin/audit', async (req, res) => {
   const auth = requireSuperAdmin(req, res); if (!auth) return;
-  send(res, 200, db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 150').all());
+  send(res, 200, db.prepare(`SELECT id, type as action, (entity_type || ':' || entity_id) as entity, actor_type, actor_id, tenant_id, created_at FROM events ORDER BY created_at DESC LIMIT 150`).all());
 });
 
 // ---- reports (real file downloads — Excel-compatible CSV with UTF-8 BOM for Persian text) ----
@@ -702,7 +670,7 @@ route('GET', '/api/reports/tasks.xlsx', async (req, res) => {
 // ---- audit ----
 route('GET', '/api/audit', async (req, res) => {
   const auth = requireAuth(req, res); if (!auth) return;
-  send(res, 200, db.prepare('SELECT * FROM audit_logs WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100').all(auth.tenantId));
+  send(res, 200, db.prepare(`SELECT id, type as action, (entity_type || ':' || entity_id) as entity, actor_type, actor_id, created_at FROM events WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100`).all(auth.tenantId));
 });
 
 // ---- health ----

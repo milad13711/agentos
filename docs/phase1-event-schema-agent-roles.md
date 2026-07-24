@@ -190,18 +190,45 @@ const ROLES = {
 
 ---
 
-## چک‌لیست پیاده‌سازی (بعد از تأیید شما)
+## چک‌لیست پیاده‌سازی — همه انجام شد ✅
 
-- [ ] جدول `events` به `db.js` اضافه بشه (کنار جدول‌های فعلی، بدون حذف چیزی)
-- [ ] `src/actions.js` ساخته بشه: منطق `switch(action)` از `agent.js` به اینجا منتقل بشه (کپی، نه بازنویسی رفتار)
-- [ ] `src/roles.js` ساخته بشه با `ROLES` بالا (معادل دقیق `SENSITIVE_ACTIONS` فعلی)
-- [ ] `agent.js` بازنویسی بشه تا فقط System Prompt + parse کنه، و اجرا رو به `dispatch()` بسپاره
-- [ ] `server.js` هندلرهای REST (`POST /api/contacts` و مشابه) به `dispatch()` وصل بشن به‌جای SQL مستقیم
-- [ ] `/api/audit` و `/api/admin/audit` و KPI‌های Super Admin به `events` وصل بشن (یا `audit_logs` به‌صورت VIEW نگه داشته بشه — بسته به تصمیم بالا)
-- [ ] تست دستی: هر اکشن هم از REST هم از Agent، نتیجه و رفتار Approval Gate یکسان باشه
+- [x] جدول `events` به `db.js` اضافه شد (additive، سپس در همین فاز نهایی شد)
+- [x] `src/actions.js` ساخته شد: یک `dispatch()` واحد + registry برای هر اکشن CRUD (هم از `server.js` هم `agent.js` صدا زده می‌شه)
+- [x] `src/roles.js` ساخته شد با Capability Matrix (معادل دقیق `SENSITIVE_ACTIONS` قبلی، فقط بر اساس نقش)
+- [x] `agent.js` بازنویسی شد: اکشن‌های حساس هم از `dispatch()`/`resolveEvent()` رد می‌شن (نه دیگه `pending_actions`)
+- [x] `server.js`: همه هندلرهای REST دارای معادل Agent (contacts/deals/invoices/modules/marketplace/tasks-create) به `dispatch()` وصل شدن
+- [x] `/api/audit`, `/api/admin/audit`, KPIها، و لیست/جزئیات Tenant به `events` وصل شدن
+- [x] `audit()` (در `agent.js`) به‌جای نوشتن در `audit_logs`، مستقیم در `events` می‌نویسه — یعنی رویدادهای غیر-CRUD (ثبت‌نام Tenant، تغییر نقش تیم، تایید/رد Approval، تنظیمات Admin و...) هم دیگه یک منبع دارن، نه دو تا
+- [x] audit()های تکراری بعد از `dispatch()` حذف شدن (چون خودِ `dispatch()` همون event رو ثبت می‌کنه)
+- [x] `CREATE TABLE audit_logs/pending_actions` از `db.js` حذف شد — نصب‌های تازه دیگه این جدول‌ها رو نمی‌سازن؛ روی دیتابیس‌های موجود (مثل سرور production) دست‌نخورده می‌مونن تا backfill اجرا بشه
+- [x] `scripts/backfill-audit-to-events.js` نوشته و تست شد: `audit_logs` قدیمی رو با `status='executed'` کپی می‌کنه (idempotent، دوباره اجرا کردنش امنه)، و با فلگ `--drop-legacy-tables` جدول‌های قدیمی رو حذف می‌کنه
+- [x] تست دستی محلی: تمام اکشن‌های غیرحساس و حساس (create/update/delete/issue_invoice/build_module/publish/install) هم از REST هم از Agent، رفتار و خروجی یکسان — شامل مسیر Approval Gate (queue → approve/reject → already_resolved) و dedupe guard برای `build_module`
 
-## سوالات باز که قبل از شروع پیاده‌سازی نیاز به تأیید شما دارن
+## سوالات باز — پاسخ داده شد
 
-1. مهاجرت دیتای تاریخی `audit_logs`/`pending_actions` به `events`، یا فقط از این به بعد `events` نوشته بشه و قدیمی‌ها read-only بمونن؟ (پیشنهاد من: گزینه‌ی دوم)
-2. `audit_logs` کامل حذف بشه بعد از انتقال، یا به‌صورت VIEW روی `events` نگه داشته بشه برای سازگاری با کوئری‌های فعلی Admin Dashboard؟
-3. آیا با ترتیب چک‌لیست بالا موافقید، یا ترجیح می‌دید اول فقط `events` + `dispatch()` برای یکی دو اکشن (مثلاً همون create_contact/create_deal که در CLAUDE.md به‌عنوان نمونه اومده) پیاده بشه و تست بشه، قبل از اینکه همه‌ی اکشن‌ها رو منتقل کنیم؟
+1. **مهاجرت دیتای تاریخی**: طبق تصمیم شما، اسکریپت one-off نوشته شد (`scripts/backfill-audit-to-events.js`, ~۴۰ خط با کامنت). `audit_logs` قدیمی با `status='executed'` کپی می‌شه تا از رویدادهای زنده (`applied`) قابل تفکیک باشه.
+2. **سرنوشت `audit_logs`**: کامل Deprecate شد، نه VIEW موازی. کد دیگه چیزی توش نمی‌نویسه یا نمی‌خونه؛ فقط تا وقتی خودِ اسکریپت روی سرور production اجرا نشه، جدول قدیمی (با دیتای واقعی) دست‌نخورده باقی می‌مونه.
+3. **ترتیب**: دقیقاً طبق ۵ قدم شما پیش رفتیم و همه لوکال تست شدن (قدم ۱ تا ۴).
+
+## قدم ۵ — دیپلوی روی Production (نیاز به اقدام دستی شما)
+
+این session به سرور `94.182.93.52` دسترسی SSH نداره (شبکه sandbox فقط HTTP/HTTPS پروکسی‌شده رو اجازه می‌ده، نه TCP خام روی پورت ۲۲). یعنی نمی‌تونم مستقیم دیپلوی کنم. مراحل پیشنهادی برای شما روی سرور:
+
+```bash
+# ۱. کد جدید رو به سرور برسون (git pull اگر ریپو رو اونجا هم clone کردید، یا scp مثل قبل)
+# ۲. قبل از هر چیز، از دیتابیس زنده یک بکاپ بگیر:
+cp agentos-backend/data/agentos.sqlite agentos-backend/data/agentos.sqlite.bak-$(date +%s)
+
+# ۳. سرویس‌ها رو با کد جدید بالا بیار (این خودش schema رو صرفاً additive آپدیت می‌کنه — چیزی حذف نمی‌شه)
+docker compose up -d --build
+
+# ۴. فقط بعد از چک‌کردن اینکه همه‌چیز درست کار می‌کنه (چند روز مانیتور، یا حداقل چند ساعت)،
+#    اسکریپت backfill رو داخل کانتینر اجرا کن (بدون --drop-legacy-tables اول، برای دیدن نتیجه):
+docker compose exec backend node scripts/backfill-audit-to-events.js
+
+# ۵. بعد از تایید (مثلاً با یک کوئری دستی که تعداد ردیف‌های events با status='executed' منطقیه)،
+#    دوباره با فلگ حذف اجرا کن:
+docker compose exec backend node scripts/backfill-audit-to-events.js --drop-legacy-tables
+```
+
+اگه بخواید، می‌تونم دستورات دقیق‌تر رو هم آماده کنم — ولی خودِ اجراش روی سرور باید دست شما باشه.

@@ -10,24 +10,14 @@
 // and a fuzzy name/title fallback (LIKE match, used only by the Agent path)
 // so neither caller has to fake the other's input shape.
 //
-// Migration status:
-// - Wired into dispatch() from both server.js and agent.js: contact.created,
-//   deal.created, deal.stage_changed, module.record_created, task.created.
-// - Defined here but NOT wired yet: contact.deleted, deal.deleted,
-//   invoice.issued, module.created, marketplace.published, module.installed.
-//   These are all sensitive actions currently gated by the OLD
-//   pending_actions queue in agent.js (act() inserts into pending_actions
-//   BEFORE executeAction ever runs; executeAction only runs post-approval).
-//   Wiring them through dispatch() today would double-gate: roles.js would
-//   see actor.role='agent' and requeue an already-approved action as
-//   'pending_approval' again. They get wired together with the step-4
-//   cutover, when pending_actions is retired and dispatch()'s own
-//   requiresApproval() becomes the only gate.
-// - Not migrated (no REST duplicate to fix, so no urgency): delete_module,
-//   list_*, report, generate_report. Also PATCH /api/tasks/:id, which is a
-//   multi-purpose "update" endpoint (status/title/due date/reassignment all
-//   in one call) that doesn't map cleanly onto the Agent's single-purpose
-//   delegate_task action — needs its own small design pass.
+// Migration status: every mutating action with a REST + Agent duplicate is
+// wired through dispatch() (step 4 complete) — sensitive ones are gated by
+// dispatch()'s own requiresApproval() now, replacing pending_actions.
+// Still not migrated (no REST duplicate to fix, so no urgency): list_*,
+// report, generate_report (read-only). Also PATCH /api/tasks/:id, which is
+// a multi-purpose "update" endpoint (status/title/due date/reassignment all
+// in one call) that doesn't map cleanly onto the Agent's single-purpose
+// delegate_task action — needs its own small design pass.
 const { db, uid, now } = require('./db');
 const { requiresApproval } = require('./roles');
 
@@ -175,7 +165,17 @@ const registry = {
       db.prepare('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
         .run(id, tenantId, item.name, item.entity_label, item.fields_json, actorUserId, t);
       db.prepare('UPDATE marketplace_modules SET installs = installs + 1 WHERE id = ?').run(item.id);
-      return { entityId: id, data: db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id), fields: JSON.parse(item.fields_json) };
+      return { entityId: id, data: db.prepare('SELECT * FROM custom_modules WHERE id = ?').get(id) };
+    },
+  },
+  'module.deleted': {
+    entityType: 'module',
+    apply(tenantId, actorUserId, params) {
+      const mod = findModule(tenantId, params.id, params.moduleName);
+      if (!mod) return null;
+      db.prepare('DELETE FROM module_records WHERE module_id = ?').run(mod.id);
+      db.prepare('DELETE FROM custom_modules WHERE id = ?').run(mod.id);
+      return { entityId: mod.id, data: { label: mod.name } };
     },
   },
   'task.created': {
