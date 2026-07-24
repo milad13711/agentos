@@ -11,6 +11,7 @@ WORKDIR /app
 # before the COPY below.
 
 COPY src ./src
+COPY scripts ./scripts
 COPY package.json .
 
 # Persistent SQLite file lives here — mount a volume at /app/data in
