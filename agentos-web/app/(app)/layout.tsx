@@ -29,6 +29,7 @@ const NAV = [
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await getMe();
+  const nav = me.user.is_super_admin ? [...NAV, { href: '/admin', label: '🛡️ Super Admin' }] : NAV;
 
   return (
     <div className="flex h-screen">
@@ -38,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           AgentOS
         </div>
         <nav className="flex flex-col gap-0.5">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink key={n.href} href={n.href} label={n.label} />
           ))}
         </nav>
