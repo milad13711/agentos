@@ -44,7 +44,12 @@ function startMinimalSocks5Server(onConnect) {
         }
         const port = req.readUInt16BE(offset);
         onConnect(addr, port);
-        const upstream = net.connect(port, addr, () => {
+        // Test-only stand-in for "resolve at the proxy": a domain that
+        // doesn't exist in real DNS gets redirected to the local fake
+        // server instead of actually being resolved, so the test doesn't
+        // need a real DNS entry for it.
+        const dialAddr = addr === 'fake-telegram.test' ? '127.0.0.1' : addr;
+        const upstream = net.connect(port, dialAddr, () => {
           client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
           client.pipe(upstream);
           upstream.pipe(client);
@@ -121,4 +126,30 @@ test('getProxyAgent returns null when TELEGRAM_SOCKS_PROXY is unset, a real agen
   const agent = getProxyAgent();
   assert.ok(agent instanceof SocksProxyAgent);
   delete process.env.TELEGRAM_SOCKS_PROXY;
+});
+
+test('getProxyAgent forces remote DNS resolution even when configured with a plain socks5:// URL', async () => {
+  // This is the exact bug found on the production server: a plain
+  // "socks5://" URL makes socks-proxy-agent resolve the hostname LOCALLY
+  // (via the container's own, still-poisoned DNS) before ever contacting
+  // the proxy — completely defeating the point of routing through it. Only
+  // "socks5h://" hands the hostname to the proxy for remote resolution.
+  // getProxyAgent() must normalize this internally so a plain "socks5://"
+  // in .env still gets remote resolution.
+  const { getProxyAgent } = require('../src/telegram');
+  process.env.TELEGRAM_SOCKS_PROXY = `socks5://127.0.0.1:${socksPort}`;
+  const agent = getProxyAgent();
+  delete process.env.TELEGRAM_SOCKS_PROXY;
+
+  // "fake-telegram.test" does not exist in real DNS — if Node tried to
+  // resolve it locally before reaching the SOCKS layer, this would reject
+  // with ENOTFOUND before the SOCKS server ever sees anything.
+  const targetUrl = `https://fake-telegram.test:${httpsPort}/bottest-token/sendMessage`;
+  const result = await requestViaAgent(targetUrl, { chat_id: '999', text: 'remote lookup works' }, agent, {
+    ca: fs.readFileSync(certPath),
+    servername: '127.0.0.1',
+  });
+
+  assert.deepEqual(result, { ok: true, result: { via: 'https-server' } });
+  assert.ok(socksConnections.includes(`fake-telegram.test:${httpsPort}`), 'the SOCKS server must have received the literal hostname, not a pre-resolved IP');
 });

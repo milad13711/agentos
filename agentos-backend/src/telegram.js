@@ -52,7 +52,17 @@ function getProxyAgent() {
   const proxyUrl = process.env.TELEGRAM_SOCKS_PROXY;
   if (!proxyUrl) return null;
   if (cachedAgent && cachedProxyUrl === proxyUrl) return cachedAgent;
-  cachedAgent = new SocksProxyAgent(proxyUrl);
+  // socks-proxy-agent resolves the hostname ITSELF (via the container's own,
+  // still-poisoned DNS) before ever contacting the proxy when the URL scheme
+  // is socks4/socks5 — only socks5h (and plain socks:) hand the hostname to
+  // the proxy for remote resolution. Since the entire point of this proxy is
+  // to route around DNS interception, force remote resolution regardless of
+  // which scheme was configured — a plain "socks5://" here would otherwise
+  // silently resolve api.telegram.org locally, defeating the proxy (this is
+  // exactly what happened the first time: the SOCKS tunnel connected fine,
+  // but to whatever bogus address local DNS handed it).
+  const normalized = proxyUrl.replace(/^socks5:\/\//, 'socks5h://').replace(/^socks4:\/\//, 'socks4a://');
+  cachedAgent = new SocksProxyAgent(normalized);
   cachedProxyUrl = proxyUrl;
   return cachedAgent;
 }
