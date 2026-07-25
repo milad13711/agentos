@@ -60,13 +60,15 @@ services:
   # provider — never commit this, .env isn't tracked by git) and
   # TELEGRAM_SOCKS_PROXY=socks5://xray:1080 above to route through it.
   xray:
-    image: teddysun/xray:latest
+    # Built from source (downloads the official XTLS/Xray-core release from
+    # GitHub) instead of pulling docker.io/teddysun/xray — that specific
+    # image 403'd pulling from the production server, while Docker Hub's own
+    # official images (node:22-alpine, alpine) pull fine, so this sidesteps
+    # whatever that block actually was rather than depending on it lifting.
+    build: ./xray
     restart: unless-stopped
     environment:
       - TELEGRAM_VMESS_LINK=${TELEGRAM_VMESS_LINK:-}
-    volumes:
-      - ./xray-entrypoint.sh:/xray-entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/xray-entrypoint.sh"]
     networks: [agentos]
     # Not exposed to the host — only "backend" reaches it, at xray:1080.
 
