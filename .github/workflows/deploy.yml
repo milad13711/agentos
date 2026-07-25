@@ -1,0 +1,68 @@
+name: Deploy to production
+
+# Replaces the manual SSH + git pull + rsync + docker compose loop
+# (see CLAUDE.md gotcha #8) with the same steps, automated, gated on a
+# real build first so a broken commit never reaches the server.
+#
+# Requires these repository secrets (Settings > Secrets and variables >
+# Actions), see docs/ci-cd-setup.md for exactly how to set them up:
+#   DEPLOY_HOST     - 94.182.93.52
+#   DEPLOY_USER     - the SSH user (root, unless you set up a dedicated one)
+#   DEPLOY_SSH_KEY  - private half of a dedicated deploy keypair
+
+on:
+  push:
+    branches: [claude/agentos-phase-0-1-setup-vcjcz8]
+  workflow_dispatch: {}
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build agentos-web
+        working-directory: agentos-web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Syntax-check agentos-backend (zero deps, no build step)
+        working-directory: agentos-backend
+        run: |
+          for f in src/*.js scripts/*.js; do node --check "$f"; done
+
+  deploy:
+    needs: build-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            BRANCH="${{ github.ref_name }}"
+
+            if [ -d ~/agentos-src/.git ]; then
+              cd ~/agentos-src
+              git fetch origin
+              git reset --hard "origin/$BRANCH"
+            else
+              git clone -b "$BRANCH" https://github.com/milad13711/agentos.git ~/agentos-src
+            fi
+
+            rsync -a --delete ~/agentos-src/agentos-backend/ ~/agentos-backend/ --exclude data
+            rsync -a --delete ~/agentos-src/agentos-web/ ~/agentos-web/
+
+            cd ~
+            docker compose up -d --build
+
+            sleep 8
+            docker compose exec -T web wget -qO- http://backend:8787/api/health
