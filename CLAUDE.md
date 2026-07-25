@@ -42,9 +42,14 @@ rm -rf agentos-backend/data
 2. Next.js Dockerfile نیاز به پوشه `public/` داره (`COPY --from=builder /app/public ./public`) — اگه این پوشه نباشه build fail می‌شه. یک `public/robots.txt` نمونه از قبل توی پروژه هست، حذفش نکن.
 3. کوکی نشست (`lib/session.ts`) با `secure: NODE_ENV==='production'` — روی HTTP خام (بدون TLS)، این باعث می‌شه مرورگر کوکی رو اصلاً ذخیره نکنه (لاگین "بی‌صدا" fail می‌شه). راه‌حل موقت: `ALLOW_INSECURE_COOKIE=1` در env سرویس `web`. باید بعد از فعال‌شدن HTTPS واقعی حذف بشه.
 4. بک‌اند در `docker-compose.yml` به بیرون expose نمی‌شه (عمداً — کلید AI هیچ‌وقت نباید در معرض شبکه باشه). فقط از طریق شبکه داخلی Docker با `web` صحبت می‌کنه. اگه خواستی مستقیم تستش کنی: `docker compose exec web wget -qO- http://backend:8787/api/health`
-5. بدهی فنی شناخته‌شده: منطق `create_contact`/`create_deal` دقیقاً دوبار پیاده‌سازی شده — یک‌بار در `server.js` (مسیر REST مستقیم)، یک‌بار در `agent.js` (مسیر Agent). یکی‌کردنشون هنوز انجام نشده.
+5. ✅ **رفع شد (فاز ۱)**: منطق `create_contact`/`create_deal` و بقیه اکشن‌های نویسا دیگه دوبار پیاده‌سازی نشده — یک `dispatch()` واحد در `agentos-backend/src/actions.js` که هم `server.js` هم `agent.js` صداش می‌زنن. جزئیات کامل در `docs/phase1-event-schema-agent-roles.md`.
 6. Node 22 لازمه (نه کمتر) — چون از `node:sqlite` استفاده می‌کنیم که Native و بدون هیچ dependency خارجیه.
-7. این پروژه از فاز ۰ به بعد یک Git repository واقعی داره (`git init` شده، `.gitignore` مناسب داره). از این به بعد هر تغییری باید commit بشه — دیگه کپی‌کردن zip/scp دستی نکن.
+7. این پروژه یک Git repository واقعی داره، روی GitHub (`milad13711/agentos`، برنچ فعلی `claude/agentos-phase-0-1-setup-vcjcz8`). هر تغییری باید commit و push بشه — دیگه کپی‌کردن zip/scp دستی نکن.
+8. **دیپلوی روی سرور فعلاً کاملاً دستی‌ست** (بند ۳ فازهای باقی‌مونده، هنوز CI/CD نداریم): SSH به سرور، `cd ~/agentos-src && git pull ...`، `rsync` به `~/agentos-backend`/`~/agentos-web`، بعد `docker compose up -d --build`. این محیط Claude Code خودش SSH نداره (فقط پراکسی HTTP/HTTPS به میزبان‌های مجاز) — یعنی دستورهای دیپلوی رو باید *به کاربر* داد تا خودش رو سرور اجرا کنه، نه اینکه فرض بشه مستقیم قابل‌اجراست.
+9. Dockerfile بک‌اند فقط `src/` و `package.json` رو کپی می‌کرد — اگه فایل جدیدی مثل `scripts/` اضافه کردی، حتماً `COPY` مربوطه رو هم به Dockerfile اضافه کن، وگرنه توی کانتینر نیست حتی اگه توی ریپو باشه.
+10. Next.js standalone output (در `agentos-web` Docker image) پیش‌فرض روی متغیر `HOSTNAME` بایند می‌شه که Docker خودکار به container ID ست می‌کنه — نه `0.0.0.0`. این باعث fail شدن HEALTHCHECK و هر تست `localhost` داخل کانتینر می‌شه. Dockerfile الان صریح `ENV HOSTNAME=0.0.0.0` داره؛ اگه یه‌بار دیگه container یهو unhealthy شد، همینو چک کن.
+11. تماس‌های AI Gateway (`callAnthropic`/`callOpenAI` در `agent.js`) یک timeout ۲۵ ثانیه‌ای دارن (`AI_GATEWAY_TIMEOUT_MS`). قبلاً نداشتن و اگه GapGPT کند/بی‌پاسخ می‌شد، درخواست برای همیشه "در حال پردازش" می‌موند بدون هیچ خطایی تو لاگ.
+12. تاریخچه‌ی چت (`ChatPanel.tsx`) تو `localStorage` مرورگر ذخیره می‌شه، با کلید per-user (`agentos_chat_messages:<userId>`) — قبلاً یک کلید ثابت بود که باعث می‌شد چت یک حساب تو حساب بعدی (روی همون مرورگر) دیده بشه. اگه فیچر مشابهی اضافه کردی، همیشه کلید `localStorage` رو namespace کن.
 
 ## پلن‌ها
 
@@ -53,9 +58,9 @@ Free (۰) → Starter (۹۹۰هزار/ماه) → Pro (۲.۹۹۹میلیون/م�
 
 ## فازهای باقی‌مانده (اولویت‌بندی‌شده)
 
-1. رفع بدهی فنی گفته‌شده در بند ۵ بالا (یکی‌کردن منطق دوباره‌پیاده‌سازی‌شده create_contact/create_deal) — طرح اولیه‌اش در فاز ۱ با Event schema + مدل Agent-as-Role شروع شده، ببین `docs/phase1-event-schema-agent-roles.md`
+1. ✅ ~~رفع بدهی فنی create_contact/create_deal~~ — فاز ۱ کامل شد و روی production تأیید شد. جزئیات کامل (schema، تصمیم‌ها، نتیجه دیپلوی) در `docs/phase1-event-schema-agent-roles.md`.
 2. HTTPS واقعی (بعد از حل DNS) + حذف `ALLOW_INSECURE_COOKIE`
-3. راه‌اندازی CI/CD ساده (git pull + rebuild روی سرور به‌جای scp دستی)
-4. Marketplace UI در Next.js (بک‌اندش آماده‌ست)
+3. راه‌اندازی CI/CD ساده (git pull + rebuild روی سرور به‌جای scp دستی) — هنوز کاملاً دستیه، ببین گیر #۸ بالا
+4. ✅ ~~Marketplace UI در Next.js~~ — صفحه `/marketplace` اضافه شد (انتشار ماژول خودت + نصب از کاتالوگ مشترک)، بک‌اندش از قبل آماده بود
 5. مهاجرت PostgreSQL (فقط وقتی واقعاً به چند Instance نیاز شد — `schema-postgres.sql` آماده‌ست ولی وایر نشده؛ چک‌لیست کامل در `agentos-deploy/DEPLOY.md`)
 6. Zarinpal واقعی (خروج از Sandbox)
