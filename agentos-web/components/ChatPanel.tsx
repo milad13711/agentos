@@ -294,7 +294,7 @@ export default function ChatPanel() {
     <div className="flex flex-col h-full">
       <div className="px-3 sm:px-6 py-3.5 border-b border-[var(--border-soft)] font-extrabold text-sm">{agentName} — دستیار CRM شما</div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-5 flex flex-col gap-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-5 flex flex-col gap-3">
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div
@@ -318,7 +318,7 @@ export default function ChatPanel() {
               {m.pendingId && (
                 <div className="mt-1.5 border border-[var(--danger)]/30 border-r-[3px] border-r-[var(--danger)] bg-[var(--surface-2)] rounded-lg rounded-r-sm p-3 text-xs">
                   <div className="text-[var(--danger)] font-bold mb-1.5">نیاز به تایید — {m.action}</div>
-                  <pre className="text-[10.5px] text-[var(--text-3)] whitespace-pre-wrap" dir="ltr">
+                  <pre className="text-[10.5px] text-[var(--text-3)] whitespace-pre-wrap break-all" dir="ltr">
                     {JSON.stringify(m.params)}
                   </pre>
                   {m.resolved ? (

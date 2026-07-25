@@ -52,7 +52,7 @@ export default function AppShell({ me, nav, children }: { me: Me; nav: NavItem[]
             ✕
           </button>
         </div>
-        <nav className="flex flex-col gap-0.5 overflow-y-auto" onClick={() => setOpen(false)}>
+        <nav className="flex flex-col gap-0.5 overflow-y-auto overflow-x-hidden" onClick={() => setOpen(false)}>
           {nav.map((n) => (
             <NavLink key={n.href} href={n.href} label={n.label} />
           ))}

@@ -41,7 +41,7 @@ export default function ContactsPage() {
   const shown = q ? contacts.filter((c) => c.name.includes(q) || (c.phone || '').includes(q) || (c.company || '').includes(q)) : contacts;
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <h1 className="font-extrabold text-sm mb-4">مخاطبین</h1>
 
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 mb-4">

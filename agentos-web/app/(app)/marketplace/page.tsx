@@ -72,7 +72,7 @@ export default function MarketplacePage() {
   if (loading) return <div className="p-4 md:p-6 text-sm text-[var(--text-3)]">در حال بارگذاری...</div>;
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto flex flex-col gap-8">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden flex flex-col gap-8">
       <div>
         <h1 className="font-extrabold text-sm mb-1">Marketplace</h1>
         <p className="text-xs text-[var(--text-3)]">

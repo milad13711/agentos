@@ -53,7 +53,7 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <h1 className="font-extrabold text-sm mb-4">تیم و سطوح دسترسی</h1>
 
       {canManage && (

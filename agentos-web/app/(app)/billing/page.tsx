@@ -53,7 +53,7 @@ function BillingContent() {
   const canManage = ['owner', 'admin'].includes(role);
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <h1 className="font-extrabold text-sm mb-4">صورت‌حساب و پلن</h1>
 
       {paymentStatus === 'success' && (

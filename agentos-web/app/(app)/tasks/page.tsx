@@ -51,7 +51,7 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <h1 className="font-extrabold text-sm mb-4">وظایف، یادآورها و پیگیری‌ها</h1>
 
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 mb-5">

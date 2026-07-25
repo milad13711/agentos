@@ -48,7 +48,7 @@ export default function ModulesPage() {
   if (loading) return <div className="p-4 md:p-6 text-sm text-[var(--text-3)]">در حال بارگذاری...</div>;
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto flex flex-col md:flex-row gap-5">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden flex flex-col md:flex-row gap-5">
       <div className="w-full md:w-64 shrink-0">
         <h1 className="font-extrabold text-sm mb-3">ماژول‌های ساخته‌شده</h1>
         {modules.length === 0 && (

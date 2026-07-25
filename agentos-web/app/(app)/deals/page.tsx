@@ -51,7 +51,7 @@ export default function DealsPage() {
   const pipelineValue = shown.filter((d) => d.stage !== 'برنده' && d.stage !== 'ازدست‌رفته').reduce((s, d) => s + (d.amount || 0), 0);
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
         <h1 className="font-extrabold text-sm">معاملات و سرنخ‌ها</h1>
         <div className="text-xs text-[var(--text-3)]">ارزش پایپ‌لاین: {pipelineValue.toLocaleString('en-US')} تومان</div>

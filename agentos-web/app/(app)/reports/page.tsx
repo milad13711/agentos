@@ -33,7 +33,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden">
       <h1 className="font-extrabold text-sm mb-4">گزارش‌ها</h1>
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 max-w-lg">
         <h3 className="font-bold text-sm mb-1">دانلود گزارش</h3>

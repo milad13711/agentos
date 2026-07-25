@@ -90,7 +90,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 overflow-y-auto flex flex-col gap-5">
+    <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden flex flex-col gap-5">
       <h1 className="font-extrabold text-sm">Super Admin Dashboard</h1>
 
       <div className="flex gap-1.5 border-b border-[var(--border-soft)] overflow-x-auto whitespace-nowrap -mx-4 px-4 md:mx-0 md:px-0">
