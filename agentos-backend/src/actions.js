@@ -204,10 +204,17 @@ function insertEvent(actor, type, entityType, entityId, params, status) {
   return id;
 }
 
+const VALID_ROLES = new Set(['owner', 'admin', 'member', 'agent']);
+
 // actor: { tenantId, userId, role: 'owner'|'admin'|'member'|'agent' }
 function dispatch(actor, type, params) {
   const def = registry[type];
   if (!def) throw new Error('unknown_action:' + type);
+  // requiresApproval() silently returns false for a role it doesn't recognize
+  // (no entry in the capability matrix), which would fail OPEN — a sensitive
+  // action skipping the approval gate — if some future bug ever passed a
+  // garbage role through. Reject that here instead of trusting the default.
+  if (!VALID_ROLES.has(actor.role)) throw new Error('unknown_actor_role:' + actor.role);
 
   if (requiresApproval(actor.role, type)) {
     const eventId = insertEvent(actor, type, def.entityType, null, params, 'pending_approval');
