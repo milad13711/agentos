@@ -33,7 +33,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto">
       <h1 className="font-extrabold text-sm mb-4">گزارش‌ها</h1>
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 max-w-lg">
         <h3 className="font-bold text-sm mb-1">دانلود گزارش</h3>
@@ -41,12 +41,12 @@ export default function ReportsPage() {
           Excel (.xlsx واقعی) مستقیم از سرور دانلود می‌شه. PDF از طریق چاپ مرورگر ساخته می‌شه تا فارسی/RTL درست رندر بشه.
         </p>
         {REPORTS.map(([key, label]) => (
-          <div key={key} className="flex items-center gap-3 mb-2.5">
-            <div className="flex-1 text-sm">{label}</div>
-            <button onClick={() => downloadXlsx(key)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs">
+          <div key={key} className="flex flex-wrap items-center gap-2.5 mb-2.5">
+            <div className="flex-1 min-w-[70px] text-sm">{label}</div>
+            <button onClick={() => downloadXlsx(key)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs whitespace-nowrap">
               ⬇ Excel
             </button>
-            <button onClick={() => printPdf(key)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs">
+            <button onClick={() => printPdf(key)} className="border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs whitespace-nowrap">
               🖨 PDF
             </button>
           </div>

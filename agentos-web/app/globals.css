@@ -18,6 +18,15 @@ body {
   background: var(--bg);
   color: var(--text-1);
   font-family: 'Vazirmatn', system-ui, sans-serif;
+  overflow-x: hidden; /* safety net: no page ever scrolls sideways, even if a child briefly overflows */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Comfortable minimum touch targets on mobile without changing desktop sizing. */
+@media (max-width: 767px) {
+  button, select {
+    min-height: 2.25rem;
+  }
 }
 
 ::-webkit-scrollbar { width: 6px; }

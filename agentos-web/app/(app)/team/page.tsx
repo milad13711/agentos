@@ -53,7 +53,7 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto">
       <h1 className="font-extrabold text-sm mb-4">تیم و سطوح دسترسی</h1>
 
       {canManage && (
@@ -85,49 +85,51 @@ export default function TeamPage() {
         </div>
       )}
 
-      <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-        <thead>
-          <tr className="text-[11px] text-[var(--text-3)]">
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نام</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">ایمیل</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نقش</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">Agent شخصی</th>
-            {canManage && <th className="border-b border-[var(--border)]" />}
-          </tr>
-        </thead>
-        <tbody>
-          {team.map((u) => (
-            <tr key={u.id} className="text-[var(--text-2)]">
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                <b className="text-[var(--text-1)]">{u.name}</b>
-              </td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>
-                {u.email}
-              </td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                {canManage && u.role !== 'owner' ? (
-                  <select value={u.role} onChange={(e) => changeRole(u.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                ) : (
-                  <span className="text-[10.5px] font-semibold bg-[var(--primary-soft)] text-[var(--primary)] px-2 py-0.5 rounded-full">{u.role}</span>
-                )}
-              </td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{u.agent_name || '—'}</td>
-              {canManage && (
+      <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[560px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+          <thead>
+            <tr className="text-[11px] text-[var(--text-3)]">
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نام</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">ایمیل</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نقش</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">Agent شخصی</th>
+              {canManage && <th className="border-b border-[var(--border)]" />}
+            </tr>
+          </thead>
+          <tbody>
+            {team.map((u) => (
+              <tr key={u.id} className="text-[var(--text-2)]">
                 <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                  {u.role !== 'owner' && u.id !== me.user.id && (
-                    <button onClick={() => remove(u.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">
-                      حذف
-                    </button>
+                  <b className="text-[var(--text-1)]">{u.name}</b>
+                </td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>
+                  {u.email}
+                </td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                  {canManage && u.role !== 'owner' ? (
+                    <select value={u.role} onChange={(e) => changeRole(u.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  ) : (
+                    <span className="text-[10.5px] font-semibold bg-[var(--primary-soft)] text-[var(--primary)] px-2 py-0.5 rounded-full">{u.role}</span>
                   )}
                 </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{u.agent_name || '—'}</td>
+                {canManage && (
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                    {u.role !== 'owner' && u.id !== me.user.id && (
+                      <button onClick={() => remove(u.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">
+                        حذف
+                      </button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <p className="text-xs text-[var(--text-3)] mt-3">
         نقش <b>Owner</b> همیشه دسترسی کامل داره. <b>Admin</b> می‌تونه پرسنل مدیریت کنه. <b>Member</b> فقط به کار خودش و وظایف ارجاع‌شده دسترسی داره.
       </p>

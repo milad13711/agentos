@@ -41,22 +41,22 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen">
-      <header className="flex items-center justify-between px-8 py-5 border-b border-[var(--border-soft)]">
-        <div className="flex items-center gap-2 font-extrabold">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--primary)] to-[#9c7d1c]" />
+      <header className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 border-b border-[var(--border-soft)]">
+        <div className="flex items-center gap-2 font-extrabold text-sm sm:text-base">
+          <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-[var(--primary)] to-[#9c7d1c]" />
           AgentOS
         </div>
-        <nav className="flex gap-3">
-          <Link href="/login" className="text-sm text-[var(--text-2)] px-4 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--surface-2)]">
+        <nav className="flex gap-2 sm:gap-3">
+          <Link href="/login" className="text-xs sm:text-sm text-[var(--text-2)] px-3 sm:px-4 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--surface-2)]">
             ورود
           </Link>
-          <Link href="/register" className="text-sm font-bold px-4 py-2 rounded-lg bg-[var(--primary)] text-[#1a1400]">
+          <Link href="/register" className="text-xs sm:text-sm font-bold px-3 sm:px-4 py-2 rounded-lg bg-[var(--primary)] text-[#1a1400]">
             شروع رایگان
           </Link>
         </nav>
       </header>
 
-      <section className="text-center px-6 py-16 max-w-2xl mx-auto">
+      <section className="text-center px-4 sm:px-6 py-12 sm:py-16 max-w-2xl mx-auto">
         <div className="inline-block text-xs font-semibold text-[var(--primary)] bg-[var(--primary-soft)] px-3 py-1 rounded-full mb-4">
           اولین Agent-First Business OS فارسی
         </div>
@@ -66,7 +66,7 @@ export default async function HomePage() {
         <p className="text-[var(--text-2)] mb-8 leading-8">
           به‌جای پر کردن فرم، فقط با Agent صحبت کن. مخاطب بساز، فاکتور صادر کن، ماژول اختصاصی بساز — همه با زبان طبیعی.
         </p>
-        <div className="flex gap-3 justify-center">
+        <div className="flex flex-wrap gap-3 justify-center">
           <Link href="/register" className="px-6 py-3 rounded-xl font-bold bg-[var(--primary)] text-[#1a1400]">
             شروع رایگان
           </Link>
@@ -76,7 +76,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="px-6 pb-20">
+      <section className="px-4 sm:px-6 pb-16 sm:pb-20">
         <div className="text-center mb-10">
           <h2 className="text-xl font-extrabold mb-2">پلن مناسب خودت رو انتخاب کن</h2>
           <p className="text-sm text-[var(--text-3)]">بدون نیاز به کارت اعتباری برای شروع — قیمت‌ها زنده از بک‌اند خونده می‌شن</p>

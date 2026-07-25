@@ -41,7 +41,7 @@ export default function ContactsPage() {
   const shown = q ? contacts.filter((c) => c.name.includes(q) || (c.phone || '').includes(q) || (c.company || '').includes(q)) : contacts;
 
   return (
-    <div className="p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto">
       <h1 className="font-extrabold text-sm mb-4">مخاطبین</h1>
 
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 mb-4">
@@ -72,31 +72,33 @@ export default function ContactsPage() {
         className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3.5 py-2.5 text-sm outline-none mb-3"
       />
 
-      <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-        <thead>
-          <tr className="text-[11px] text-[var(--text-3)]">
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نام</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">تلفن</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">شرکت</th>
-            <th className="border-b border-[var(--border)]" />
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((c) => (
-            <tr key={c.id} className="text-[var(--text-2)]">
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]"><b className="text-[var(--text-1)]">{c.name}</b></td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>{c.phone || '—'}</td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{c.company || '—'}</td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                <button onClick={() => removeContact(c.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">حذف</button>
-              </td>
+      <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[480px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+          <thead>
+            <tr className="text-[11px] text-[var(--text-3)]">
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">نام</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">تلفن</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">شرکت</th>
+              <th className="border-b border-[var(--border)]" />
             </tr>
-          ))}
-          {shown.length === 0 && (
-            <tr><td colSpan={4} className="text-center text-[var(--text-3)] py-6">موردی یافت نشد</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shown.map((c) => (
+              <tr key={c.id} className="text-[var(--text-2)]">
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]"><b className="text-[var(--text-1)]">{c.name}</b></td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>{c.phone || '—'}</td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{c.company || '—'}</td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                  <button onClick={() => removeContact(c.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">حذف</button>
+                </td>
+              </tr>
+            ))}
+            {shown.length === 0 && (
+              <tr><td colSpan={4} className="text-center text-[var(--text-3)] py-6">موردی یافت نشد</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

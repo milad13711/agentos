@@ -45,11 +45,11 @@ export default function ModulesPage() {
     setNewValues({});
   }
 
-  if (loading) return <div className="p-6 text-sm text-[var(--text-3)]">در حال بارگذاری...</div>;
+  if (loading) return <div className="p-4 md:p-6 text-sm text-[var(--text-3)]">در حال بارگذاری...</div>;
 
   return (
-    <div className="p-6 overflow-y-auto flex gap-5">
-      <div className="w-64 shrink-0">
+    <div className="p-4 md:p-6 overflow-y-auto flex flex-col md:flex-row gap-5">
+      <div className="w-full md:w-64 shrink-0">
         <h1 className="font-extrabold text-sm mb-3">ماژول‌های ساخته‌شده</h1>
         {modules.length === 0 && (
           <div className="text-xs text-[var(--text-3)] bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl p-4">
@@ -78,7 +78,7 @@ export default function ModulesPage() {
 
           <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 mb-4">
             <h3 className="font-bold text-xs mb-2.5">افزودن رکورد جدید</h3>
-            <div className="grid grid-cols-2 gap-2.5 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
               {selected.fields.map((f) => (
                 <div key={f.key}>
                   <label className="block text-[10.5px] text-[var(--text-3)] mb-1">{f.label}</label>
@@ -96,38 +96,40 @@ export default function ModulesPage() {
             </button>
           </div>
 
-          <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-            <thead>
-              <tr className="text-[11px] text-[var(--text-3)]">
-                {selected.fields.map((f) => (
-                  <th key={f.key} className="text-right px-3 py-2.5 border-b border-[var(--border)]">
-                    {f.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((r) => {
-                const values = JSON.parse(r.values_json || '{}');
-                return (
-                  <tr key={r.id} className="text-[var(--text-2)]">
-                    {selected.fields.map((f) => (
-                      <td key={f.key} className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                        {values[f.key] ?? '—'}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-              {records.length === 0 && (
-                <tr>
-                  <td colSpan={selected.fields.length} className="text-center text-[var(--text-3)] py-6">
-                    هنوز رکوردی ثبت نشده
-                  </td>
+          <div className="overflow-x-auto rounded-xl">
+            <table className="w-full min-w-[420px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+              <thead>
+                <tr className="text-[11px] text-[var(--text-3)]">
+                  {selected.fields.map((f) => (
+                    <th key={f.key} className="text-right px-3 py-2.5 border-b border-[var(--border)]">
+                      {f.label}
+                    </th>
+                  ))}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {records.map((r) => {
+                  const values = JSON.parse(r.values_json || '{}');
+                  return (
+                    <tr key={r.id} className="text-[var(--text-2)]">
+                      {selected.fields.map((f) => (
+                        <td key={f.key} className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                          {values[f.key] ?? '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+                {records.length === 0 && (
+                  <tr>
+                    <td colSpan={selected.fields.length} className="text-center text-[var(--text-3)] py-6">
+                      هنوز رکوردی ثبت نشده
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

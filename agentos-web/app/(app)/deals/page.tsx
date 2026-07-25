@@ -51,8 +51,8 @@ export default function DealsPage() {
   const pipelineValue = shown.filter((d) => d.stage !== 'برنده' && d.stage !== 'ازدست‌رفته').reduce((s, d) => s + (d.amount || 0), 0);
 
   return (
-    <div className="p-6 overflow-y-auto">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 md:p-6 overflow-y-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
         <h1 className="font-extrabold text-sm">معاملات و سرنخ‌ها</h1>
         <div className="text-xs text-[var(--text-3)]">ارزش پایپ‌لاین: {pipelineValue.toLocaleString('en-US')} تومان</div>
       </div>
@@ -84,7 +84,7 @@ export default function DealsPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-3">
+      <div className="flex flex-wrap gap-2 mb-3">
         <button onClick={() => setFilterStage('')} className={`text-[11px] px-3 py-1.5 rounded-full ${!filterStage ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--surface-2)] text-[var(--text-3)]'}`}>
           همه
         </button>
@@ -95,37 +95,39 @@ export default function DealsPage() {
         ))}
       </div>
 
-      <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-        <thead>
-          <tr className="text-[11px] text-[var(--text-3)]">
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">عنوان</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مخاطب</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مبلغ</th>
-            <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مرحله</th>
-            <th className="border-b border-[var(--border)]" />
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((d) => (
-            <tr key={d.id} className="text-[var(--text-2)]">
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]"><b className="text-[var(--text-1)]">{d.title}</b></td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{d.contact_name || '—'}</td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{d.amount != null ? d.amount.toLocaleString('en-US') + ' تومان' : '—'}</td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                <select value={d.stage} onChange={(e) => changeStage(d.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
-                  {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </td>
-              <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                <button onClick={() => removeDeal(d.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">حذف</button>
-              </td>
+      <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[560px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+          <thead>
+            <tr className="text-[11px] text-[var(--text-3)]">
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">عنوان</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مخاطب</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مبلغ</th>
+              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مرحله</th>
+              <th className="border-b border-[var(--border)]" />
             </tr>
-          ))}
-          {shown.length === 0 && (
-            <tr><td colSpan={5} className="text-center text-[var(--text-3)] py-6">موردی یافت نشد</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shown.map((d) => (
+              <tr key={d.id} className="text-[var(--text-2)]">
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]"><b className="text-[var(--text-1)]">{d.title}</b></td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{d.contact_name || '—'}</td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{d.amount != null ? d.amount.toLocaleString('en-US') + ' تومان' : '—'}</td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                  <select value={d.stage} onChange={(e) => changeStage(d.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
+                    {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </td>
+                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                  <button onClick={() => removeDeal(d.id)} className="bg-[var(--danger-soft)] text-[var(--danger)] rounded-md px-2.5 py-1 text-xs">حذف</button>
+                </td>
+              </tr>
+            ))}
+            {shown.length === 0 && (
+              <tr><td colSpan={5} className="text-center text-[var(--text-3)] py-6">موردی یافت نشد</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

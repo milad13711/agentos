@@ -90,15 +90,15 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="p-6 overflow-y-auto flex flex-col gap-5">
+    <div className="p-4 md:p-6 overflow-y-auto flex flex-col gap-5">
       <h1 className="font-extrabold text-sm">Super Admin Dashboard</h1>
 
-      <div className="flex gap-1.5 border-b border-[var(--border-soft)]">
+      <div className="flex gap-1.5 border-b border-[var(--border-soft)] overflow-x-auto whitespace-nowrap -mx-4 px-4 md:mx-0 md:px-0">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`text-xs font-semibold px-3.5 py-2.5 rounded-t-lg -mb-px border-b-2 ${
+            className={`text-xs font-semibold px-3.5 py-2.5 rounded-t-lg -mb-px border-b-2 shrink-0 ${
               tab === t.key ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-[var(--text-3)]'
             }`}
           >
@@ -145,7 +145,8 @@ export default function AdminPage() {
       )}
 
       {!loading && tab === 'tenants' && (
-        <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+        <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[720px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
           <thead>
             <tr className="text-[11px] text-[var(--text-3)]">
               {['نام', 'پلن', 'وضعیت', 'کاربران', 'مخاطب/معامله', 'آخرین فعالیت', ''].map((h) => (
@@ -189,6 +190,7 @@ export default function AdminPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {!loading && tab === 'plans' && (
@@ -253,7 +255,8 @@ export default function AdminPage() {
       )}
 
       {!loading && tab === 'marketplace' && (
-        <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+        <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[560px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
           <thead>
             <tr className="text-[11px] text-[var(--text-3)]">
               {['نام ماژول', 'منتشرکننده', 'نصب', 'وضعیت', ''].map((h) => (
@@ -284,10 +287,12 @@ export default function AdminPage() {
             )}
           </tbody>
         </table>
+        </div>
       )}
 
       {!loading && tab === 'audit' && (
-        <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+        <div className="overflow-x-auto rounded-xl">
+        <table className="w-full min-w-[640px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
           <thead>
             <tr className="text-[11px] text-[var(--text-3)]">
               {['اکشن', 'موجودیت', 'نوع فاعل', 'Tenant', 'زمان'].map((h) => (
@@ -307,6 +312,7 @@ export default function AdminPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

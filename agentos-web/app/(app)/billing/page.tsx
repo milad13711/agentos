@@ -53,7 +53,7 @@ function BillingContent() {
   const canManage = ['owner', 'admin'].includes(role);
 
   return (
-    <div className="p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto">
       <h1 className="font-extrabold text-sm mb-4">صورت‌حساب و پلن</h1>
 
       {paymentStatus === 'success' && (
@@ -113,39 +113,41 @@ function BillingContent() {
           </div>
 
           <h3 className="font-bold text-xs mb-2.5">تاریخچه پرداخت‌ها</h3>
-          <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-            <thead>
-              <tr className="text-[11px] text-[var(--text-3)]">
-                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">پلن</th>
-                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">دوره</th>
-                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مبلغ</th>
-                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">وضعیت</th>
-                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">کد پیگیری</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((h) => (
-                <tr key={h.id} className="text-[var(--text-2)]">
-                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.plan_key}</td>
-                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.billing_cycle === 'yearly' ? 'سالانه' : 'ماهانه'}</td>
-                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.amount_toman.toLocaleString('en-US')} تومان</td>
-                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                    <span
-                      className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${
-                        h.status === 'paid' ? 'bg-[var(--success-soft)] text-[var(--success)]' : h.status === 'failed' ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--info-soft)] text-[var(--info)]'
-                      }`}
-                    >
-                      {h.status === 'paid' ? 'موفق' : h.status === 'failed' ? 'ناموفق' : 'در انتظار'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>{h.ref_id || '—'}</td>
+          <div className="overflow-x-auto rounded-xl">
+            <table className="w-full min-w-[560px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+              <thead>
+                <tr className="text-[11px] text-[var(--text-3)]">
+                  <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">پلن</th>
+                  <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">دوره</th>
+                  <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مبلغ</th>
+                  <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">وضعیت</th>
+                  <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">کد پیگیری</th>
                 </tr>
-              ))}
-              {history.length === 0 && (
-                <tr><td colSpan={5} className="text-center text-[var(--text-3)] py-6">هنوز پرداختی ثبت نشده</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {history.map((h) => (
+                  <tr key={h.id} className="text-[var(--text-2)]">
+                    <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.plan_key}</td>
+                    <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.billing_cycle === 'yearly' ? 'سالانه' : 'ماهانه'}</td>
+                    <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{h.amount_toman.toLocaleString('en-US')} تومان</td>
+                    <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                      <span
+                        className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${
+                          h.status === 'paid' ? 'bg-[var(--success-soft)] text-[var(--success)]' : h.status === 'failed' ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--info-soft)] text-[var(--info)]'
+                        }`}
+                      >
+                        {h.status === 'paid' ? 'موفق' : h.status === 'failed' ? 'ناموفق' : 'در انتظار'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-[var(--border-soft)]" dir="ltr" style={{ textAlign: 'left' }}>{h.ref_id || '—'}</td>
+                  </tr>
+                ))}
+                {history.length === 0 && (
+                  <tr><td colSpan={5} className="text-center text-[var(--text-3)] py-6">هنوز پرداختی ثبت نشده</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>

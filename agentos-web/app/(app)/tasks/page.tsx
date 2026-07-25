@@ -51,7 +51,7 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="p-6 overflow-y-auto">
+    <div className="p-4 md:p-6 overflow-y-auto">
       <h1 className="font-extrabold text-sm mb-4">وظایف، یادآورها و پیگیری‌ها</h1>
 
       <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 mb-5">
@@ -82,55 +82,57 @@ export default function TasksPage() {
       </div>
 
       {!loading && (
-        <table className="w-full border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
-          <thead>
-            <tr className="text-[11px] text-[var(--text-3)]">
-              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">عنوان</th>
-              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مسئول</th>
-              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">وضعیت</th>
-              <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">ارجاع به</th>
-              <th className="border-b border-[var(--border)]" />
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.map((t) => (
-              <tr key={t.id} className="text-[var(--text-2)]">
-                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                  <b className="text-[var(--text-1)]">{t.title}</b>
-                </td>
-                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{t.assignee_name || '—'}</td>
-                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                  <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${t.status === 'open' ? 'bg-[var(--info-soft)] text-[var(--info)]' : 'bg-[var(--success-soft)] text-[var(--success)]'}`}>
-                    {t.status === 'open' ? 'باز' : 'انجام‌شده'}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                  <select value={t.assignee_id} onChange={(e) => delegate(t.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
-                    {team.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
-                  {t.status === 'open' && (
-                    <button onClick={() => markDone(t.id)} className="border border-[var(--border)] rounded-md px-2.5 py-1 text-xs">
-                      ✓ انجام شد
-                    </button>
-                  )}
-                </td>
+        <div className="overflow-x-auto rounded-xl">
+          <table className="w-full min-w-[560px] border-collapse bg-[var(--surface)] border border-[var(--border-soft)] rounded-xl overflow-hidden text-sm">
+            <thead>
+              <tr className="text-[11px] text-[var(--text-3)]">
+                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">عنوان</th>
+                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مسئول</th>
+                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">وضعیت</th>
+                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">ارجاع به</th>
+                <th className="border-b border-[var(--border)]" />
               </tr>
-            ))}
-            {tasks.length === 0 && (
-              <tr>
-                <td colSpan={5} className="text-center text-[var(--text-3)] py-6">
-                  وظیفه‌ای ثبت نشده
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tasks.map((t) => (
+                <tr key={t.id} className="text-[var(--text-2)]">
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                    <b className="text-[var(--text-1)]">{t.title}</b>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{t.assignee_name || '—'}</td>
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                    <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${t.status === 'open' ? 'bg-[var(--info-soft)] text-[var(--info)]' : 'bg-[var(--success-soft)] text-[var(--success)]'}`}>
+                      {t.status === 'open' ? 'باز' : 'انجام‌شده'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                    <select value={t.assignee_id} onChange={(e) => delegate(t.id, e.target.value)} className="bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-2 py-1 text-xs">
+                      {team.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
+                    {t.status === 'open' && (
+                      <button onClick={() => markDone(t.id)} className="border border-[var(--border)] rounded-md px-2.5 py-1 text-xs">
+                        ✓ انجام شد
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {tasks.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="text-center text-[var(--text-3)] py-6">
+                    وظیفه‌ای ثبت نشده
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

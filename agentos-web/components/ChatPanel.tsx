@@ -107,7 +107,8 @@ function ResultCard({ result }: { result: any }) {
       const fmt = (col: string, val: any) => (col === 'created_at' || col === 'due_at' ? esc(val ? new Date(val).toLocaleDateString('fa-IR') : null) : esc(val));
       return (
         <div className={box}>
-          <table className="w-full text-[11px]">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[280px] text-[11px]">
             <thead>
               <tr>{cols.map((c) => <th key={c} className="text-right text-[var(--text-3)] pb-1">{c}</th>)}</tr>
             </thead>
@@ -117,6 +118,7 @@ function ResultCard({ result }: { result: any }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       );
     }
@@ -129,7 +131,8 @@ function ResultCard({ result }: { result: any }) {
       const fields = mod.fields || [];
       return (
         <div className={box}>
-          <table className="w-full text-[11px]">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[280px] text-[11px]">
             <thead>
               <tr>{fields.map((f: any) => <th key={f.key} className="text-right text-[var(--text-3)] pb-1">{f.label}</th>)}</tr>
             </thead>
@@ -140,6 +143,7 @@ function ResultCard({ result }: { result: any }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       );
     }
@@ -288,9 +292,9 @@ export default function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-3.5 border-b border-[var(--border-soft)] font-extrabold text-sm">{agentName} — دستیار CRM شما</div>
+      <div className="px-3 sm:px-6 py-3.5 border-b border-[var(--border-soft)] font-extrabold text-sm">{agentName} — دستیار CRM شما</div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-5 flex flex-col gap-3">
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div
@@ -300,7 +304,7 @@ export default function ChatPanel() {
             >
               {m.role === 'user' ? 'شما' : 'A'}
             </div>
-            <div className="max-w-[74%]">
+            <div className="max-w-[88%] sm:max-w-[74%]">
               <div
                 className={`px-3.5 py-2.5 rounded-2xl text-sm leading-7 ${
                   m.role === 'user'
