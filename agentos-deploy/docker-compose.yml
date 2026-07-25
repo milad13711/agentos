@@ -33,6 +33,9 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Only needed if api.telegram.org is filtered from this server (it is,
       # from Iran) — routes Telegram API calls through a SOCKS5 proxy instead.
+      # If your proxy is a vmess:// link (V2Ray/Xray, not a raw SOCKS5 URL),
+      # use the `xray` service below instead: set TELEGRAM_VMESS_LINK in
+      # .env and point this at socks5://xray:1080 — see its comment block.
       - TELEGRAM_SOCKS_PROXY=${TELEGRAM_SOCKS_PROXY:-}
       - ZARINPAL_MERCHANT_ID=${ZARINPAL_MERCHANT_ID:-}
       - ZARINPAL_SANDBOX=${ZARINPAL_SANDBOX:-1}
@@ -43,8 +46,29 @@ services:
     # Not exposed to the host on purpose — only the "web" service and Caddy
     # talk to it, over the internal Docker network. The AI key never needs
     # to leave this container.
+    depends_on: [xray]
     # Uncomment once DATABASE_URL above points at the `postgres` service:
     # depends_on: [postgres]
+
+  # Local SOCKS5 proxy fronting a vmess:// (V2Ray/Xray) connection, for when
+  # api.telegram.org is network-filtered where this server runs (confirmed
+  # true for at least one Iran-hosted deployment — DNS for api.telegram.org
+  # resolves to a private address even via 8.8.8.8, which is network-level
+  # interception, not a local misconfiguration). Always running, but a no-op
+  # (just sleeps) if TELEGRAM_VMESS_LINK isn't set — harmless either way.
+  # Set TELEGRAM_VMESS_LINK in .env (the vmess:// share-link from your
+  # provider — never commit this, .env isn't tracked by git) and
+  # TELEGRAM_SOCKS_PROXY=socks5://xray:1080 above to route through it.
+  xray:
+    image: teddysun/xray:latest
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_VMESS_LINK=${TELEGRAM_VMESS_LINK:-}
+    volumes:
+      - ./xray-entrypoint.sh:/xray-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/xray-entrypoint.sh"]
+    networks: [agentos]
+    # Not exposed to the host — only "backend" reaches it, at xray:1080.
 
   # Optional — only needed once you're actually running more than one
   # backend instance (SQLite is a single local file, fine until then).
