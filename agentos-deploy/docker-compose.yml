@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Place this file in the PARENT folder that contains both agentos-backend/
 # and agentos-web/ (e.g. ~/Documents/agent-os-project/docker-compose.yml).
 #

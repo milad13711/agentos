@@ -65,8 +65,31 @@ jobs:
             rsync -a --delete ~/agentos-src/agentos-backend/ ~/agentos-backend/ --exclude data
             rsync -a --delete ~/agentos-src/agentos-web/ ~/agentos-web/
 
+            # docker-compose.yml and Caddyfile live outside agentos-backend/
+            # and agentos-web/, so the rsyncs above never touched them —
+            # editing them in the repo used to silently not reach the server.
+            # Now they're kept in sync too: the repo (agentos-deploy/) is the
+            # source of truth, so any manual edit made directly on the server
+            # to ~/docker-compose.yml or ~/Caddyfile will be OVERWRITTEN on
+            # the next deploy — make those edits in agentos-deploy/ instead.
+            CADDY_BEFORE=""
+            [ -f ~/Caddyfile ] && CADDY_BEFORE=$(md5sum ~/Caddyfile | awk '{print $1}')
+
+            rsync -a ~/agentos-src/agentos-deploy/docker-compose.yml ~/docker-compose.yml
+            rsync -a ~/agentos-src/agentos-deploy/Caddyfile ~/Caddyfile
+
+            CADDY_AFTER=$(md5sum ~/Caddyfile | awk '{print $1}')
+
             cd ~
             docker compose up -d --build
+
+            # Compose only recreates a service when ITS OWN definition
+            # changes — it never notices a volume-mounted file (Caddyfile)
+            # changing on disk, so Caddy has to be told explicitly.
+            if [ "$CADDY_BEFORE" != "$CADDY_AFTER" ]; then
+              echo "Caddyfile changed — restarting caddy to pick it up"
+              docker compose restart caddy
+            fi
 
             sleep 8
             docker compose exec -T web wget -qO- http://backend:8787/api/health
