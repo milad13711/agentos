@@ -288,6 +288,26 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+
+-- One-time codes for "connect my account to Telegram" (Settings -> اتصال
+-- تلگرام). User requests a code, sends "/start <code>" to the bot, the bot
+-- looks the code up here and links users.telegram_chat_id. Short-lived and
+-- deleted once used — never a long-term credential.
+CREATE TABLE IF NOT EXISTS telegram_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- Single-row table tracking the last Telegram update_id we've processed, so
+-- a backend restart doesn't reprocess (and re-execute agent actions for)
+-- messages Telegram already delivered once.
+CREATE TABLE IF NOT EXISTS telegram_poll_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_update_id INTEGER NOT NULL DEFAULT 0
+);
 `);
 
   // --- safe migrations for columns added after the tables already existed ---
@@ -306,6 +326,9 @@ CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
   await safeAlter(`ALTER TABLE plans ADD COLUMN price_monthly_toman REAL NOT NULL DEFAULT 0`);
   await safeAlter(`ALTER TABLE plans ADD COLUMN price_yearly_toman REAL NOT NULL DEFAULT 0`);
   await safeAlter(`ALTER TABLE custom_modules ADD COLUMN source_market_id TEXT`);
+  await safeAlter(`ALTER TABLE users ADD COLUMN telegram_chat_id TEXT`);
+  await safeAlter(`ALTER TABLE tasks ADD COLUMN reminder_sent_at INTEGER`);
+  await safeAlter(`CREATE UNIQUE INDEX idx_users_telegram_chat ON users(telegram_chat_id)`);
 
   await seedPlans(db);
 }
@@ -339,6 +362,7 @@ CREATE TABLE IF NOT EXISTS users (
   agent_name TEXT NOT NULL DEFAULT 'Agent',
   agent_persona TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
+  telegram_chat_id TEXT UNIQUE,
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
@@ -453,6 +477,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   related_entity TEXT,
   due_at BIGINT,
   status TEXT NOT NULL DEFAULT 'open',
+  reminder_sent_at BIGINT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -491,6 +516,19 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+
+CREATE TABLE IF NOT EXISTS telegram_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS telegram_poll_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_update_id BIGINT NOT NULL DEFAULT 0
+);
 `);
 
   await seedPlans(db);

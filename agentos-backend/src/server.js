@@ -10,6 +10,8 @@ const { hashPassword, verifyPassword, signToken, authenticate } = require('./aut
 const { act, resolvePending, audit, resolveProvider } = require('./agent');
 const { dispatch, AUTOMATION_ACTION_TYPES } = require('./actions');
 const { createPaymentRequest, verifyPayment } = require('./billing');
+const telegram = require('./telegram');
+const { startReminderWorker } = require('./reminders');
 
 const PORT = process.env.PORT || 8787;
 
@@ -158,9 +160,22 @@ route('POST', '/api/auth/login', async (req, res, params, ip) => {
 
 route('GET', '/api/me', async (req, res) => {
   const auth = await requireAuth(req, res); if (!auth) return;
-  const user = await db.get('SELECT id, name, email, role, is_super_admin, agent_name, agent_persona FROM users WHERE id = ?', [auth.userId]);
+  const user = await db.get('SELECT id, name, email, role, is_super_admin, agent_name, agent_persona, telegram_chat_id FROM users WHERE id = ?', [auth.userId]);
   const tenant = await db.get('SELECT id, name, plan_key, status, trial_start, ai_provider FROM tenants WHERE id = ?', [auth.tenantId]);
-  send(res, 200, { user, tenant });
+  send(res, 200, { user: { ...user, telegramLinked: !!user.telegram_chat_id, telegram_chat_id: undefined }, tenant });
+});
+
+// ---- Telegram linking (Settings -> اتصال تلگرام) ----
+route('POST', '/api/me/telegram/link-code', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const { code, botUsername, deepLink } = await telegram.createLinkCode(auth.tenantId, auth.userId);
+  send(res, 200, { code, botUsername, deepLink, expiresInMinutes: 10 });
+});
+route('DELETE', '/api/me/telegram', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  await telegram.unlink(auth.userId);
+  await audit(auth.tenantId, 'user', auth.userId, 'unlink_telegram', 'user:' + auth.userId, {});
+  send(res, 200, { unlinked: true });
 });
 
 // ---- personal Agent customization (each team member personalizes their own Agent) ----
@@ -783,6 +798,8 @@ if (require.main === module) {
       const provider = resolveProvider();
       console.log(provider === 'mock' ? 'AI Gateway: DEV_MOCK (set ANTHROPIC_API_KEY or OPENAI_API_KEY for real agent parsing)' : `AI Gateway: LIVE (${provider})`);
     });
+    telegram.startPolling(); // no-op (just logs) if TELEGRAM_BOT_TOKEN isn't set
+    startReminderWorker();
   }).catch(e => { console.error('Failed to initialize database schema:', e); process.exit(1); });
 }
 

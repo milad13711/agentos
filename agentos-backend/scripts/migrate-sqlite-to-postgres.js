@@ -34,7 +34,7 @@ const pool = new Pool({ connectionString: databaseUrl });
 const TABLES = [
   { name: 'tenants', columns: ['id', 'name', 'plan', 'plan_key', 'status', 'trial_start', 'ai_provider', 'created_at'] },
   { name: 'plans', columns: ['id', 'key', 'name', 'price_monthly', 'price_yearly', 'price_monthly_toman', 'price_yearly_toman', 'seats_limit', 'agent_actions_limit', 'modules_limit', 'marketplace_access', 'support_level', 'features_json', 'is_active', 'updated_at'] },
-  { name: 'users', columns: ['id', 'tenant_id', 'name', 'email', 'password_hash', 'salt', 'role', 'is_super_admin', 'agent_name', 'agent_persona', 'status', 'created_at'] },
+  { name: 'users', columns: ['id', 'tenant_id', 'name', 'email', 'password_hash', 'salt', 'role', 'is_super_admin', 'agent_name', 'agent_persona', 'status', 'telegram_chat_id', 'created_at'] },
   { name: 'contacts', columns: ['id', 'tenant_id', 'name', 'phone', 'company', 'created_by', 'created_at'] },
   { name: 'deals', columns: ['id', 'tenant_id', 'title', 'contact_name', 'amount', 'stage', 'created_by', 'created_at', 'updated_at'] },
   { name: 'invoices', columns: ['id', 'tenant_id', 'deal_title', 'amount', 'created_by', 'created_at'] },
@@ -42,9 +42,11 @@ const TABLES = [
   { name: 'module_records', columns: ['id', 'module_id', 'tenant_id', 'values_json', 'created_by', 'created_at'] },
   { name: 'module_automations', columns: ['id', 'tenant_id', 'module_id', 'trigger', 'action_type', 'config_json', 'enabled', 'created_by', 'created_at'] },
   { name: 'marketplace_modules', columns: ['id', 'name', 'entity_label', 'fields_json', 'published_by_tenant', 'installs', 'enabled', 'created_at'] },
-  { name: 'tasks', columns: ['id', 'tenant_id', 'title', 'description', 'assignee_id', 'created_by', 'related_entity', 'due_at', 'status', 'created_at', 'updated_at'] },
+  { name: 'tasks', columns: ['id', 'tenant_id', 'title', 'description', 'assignee_id', 'created_by', 'related_entity', 'due_at', 'status', 'reminder_sent_at', 'created_at', 'updated_at'] },
   { name: 'subscription_payments', columns: ['id', 'tenant_id', 'plan_key', 'billing_cycle', 'amount_toman', 'authority', 'ref_id', 'status', 'created_at', 'paid_at'] },
   { name: 'events', columns: ['id', 'tenant_id', 'type', 'actor_type', 'actor_id', 'actor_role', 'entity_type', 'entity_id', 'payload_json', 'status', 'created_at', 'resolved_at'] },
+  { name: 'telegram_link_codes', columns: ['code', 'tenant_id', 'user_id', 'expires_at', 'created_at'] },
+  { name: 'telegram_poll_state', columns: ['id', 'last_update_id'] },
 ];
 
 function tableExistsInSqlite(name) {

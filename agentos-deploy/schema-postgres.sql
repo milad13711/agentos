@@ -41,6 +41,7 @@ CREATE TABLE users (
   agent_name TEXT NOT NULL DEFAULT 'Agent',
   agent_persona TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',           -- active | disabled
+  telegram_chat_id TEXT UNIQUE,                    -- linked via Settings -> اتصال تلگرام; NULL = not linked
   created_at BIGINT NOT NULL
 );
 CREATE INDEX idx_users_tenant ON users(tenant_id);
@@ -190,6 +191,23 @@ CREATE INDEX idx_events_tenant ON events(tenant_id);
 CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
 CREATE INDEX idx_events_status ON events(status);
 
+-- One-time codes for "connect my account to Telegram" — see
+-- src/telegram.js. Short-lived, deleted once used.
+CREATE TABLE telegram_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
+-- Single row: the last Telegram update_id processed, so a restart doesn't
+-- reprocess (and re-run agent actions for) already-delivered messages.
+CREATE TABLE telegram_poll_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_update_id BIGINT NOT NULL DEFAULT 0
+);
+
 CREATE TABLE tasks (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -200,6 +218,7 @@ CREATE TABLE tasks (
   related_entity TEXT,
   due_at BIGINT,
   status TEXT NOT NULL DEFAULT 'open',
+  reminder_sent_at BIGINT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -225,7 +244,8 @@ DECLARE
   t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['users','contacts','deals','invoices','custom_modules',
-                            'module_records','module_automations','tasks','subscription_payments']
+                            'module_records','module_automations','tasks','subscription_payments',
+                            'telegram_link_codes']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(

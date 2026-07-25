@@ -32,6 +32,7 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - AI_PROVIDER=${AI_PROVIDER:-}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - ZARINPAL_MERCHANT_ID=${ZARINPAL_MERCHANT_ID:-}
       - ZARINPAL_SANDBOX=${ZARINPAL_SANDBOX:-1}
       - PUBLIC_APP_URL=${PUBLIC_APP_URL:?set your real public domain, e.g. https://exirsms.ir}
