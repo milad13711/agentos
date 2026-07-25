@@ -54,6 +54,66 @@ async function findTeamMember(tenantId, id, name) {
     [tenantId, `%${name}%`]);
 }
 
+// ---------------------------------------------------------------------------
+// Module automation engine — modules used to be pure forms with nothing
+// behind them. This is a small, real workflow layer: a module can have any
+// number of `module_automations` rows, each one "when <trigger> happens on
+// this module, run <action_type> with <config_json>". Only the
+// 'record_created' trigger exists today; the `trigger` column exists so more
+// (e.g. 'record_updated') can be added later without a schema change.
+// ---------------------------------------------------------------------------
+const AUTOMATION_ACTION_TYPES = new Set(['create_task', 'webhook']);
+const WEBHOOK_TIMEOUT_MS = 8000;
+
+// Fills {{fieldKey}} placeholders in a template with the record's values —
+// e.g. titleTemplate "پیگیری {{name}}" + {name: "رضا"} -> "پیگیری رضا".
+function interpolate(template, values) {
+  return String(template || '').replace(/\{\{(\w+)\}\}/g, (_, key) => (values[key] != null ? String(values[key]) : ''));
+}
+
+async function runCreateTaskAction(tenantId, config, values, actorUserId) {
+  const title = interpolate(config.titleTemplate, values) || 'وظیفه خودکار';
+  const dueAt = config.dueInDays != null ? now() + Number(config.dueInDays) * 86400000 : null;
+  const assignee = config.assigneeId ? await findTeamMember(tenantId, config.assigneeId, null) : null;
+  const id = uid(); const t = now();
+  await db.run(`INSERT INTO tasks (id, tenant_id, title, description, assignee_id, created_by, related_entity, due_at, status, created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, tenantId, title, 'ساخته‌شده خودکار توسط اتوماسیون ماژول', (assignee ? assignee.id : actorUserId), actorUserId, null, dueAt, 'open', t, t]);
+}
+
+async function runWebhookAction(config, values) {
+  if (!config.url) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+  try {
+    await fetch(config.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'record_created', values }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    // Best-effort: a broken/unreachable webhook must not fail the record
+    // creation it's attached to. Failures are visible via server logs only
+    // for now — see docs for a future "automation run log" if that's not enough.
+    console.error('[automation webhook] failed:', config.url, e.message);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function runAutomations(tenantId, moduleId, trigger, values, actorUserId) {
+  const rules = await db.all(
+    'SELECT * FROM module_automations WHERE tenant_id = ? AND module_id = ? AND trigger = ? AND enabled = TRUE',
+    [tenantId, moduleId, trigger]
+  );
+  for (const rule of rules) {
+    const config = JSON.parse(rule.config_json || '{}');
+    if (rule.action_type === 'create_task') await runCreateTaskAction(tenantId, config, values, actorUserId);
+    else if (rule.action_type === 'webhook') await runWebhookAction(config, values);
+  }
+}
+
 const registry = {
   'contact.created': {
     entityType: 'contact',
@@ -138,8 +198,10 @@ const registry = {
       const mod = await findModule(tenantId, params.moduleId, params.moduleName);
       if (!mod) return null;
       const id = uid(); const t = now();
+      const values = params.values || {};
       await db.run('INSERT INTO module_records (id, module_id, tenant_id, values_json, created_by, created_at) VALUES (?,?,?,?,?,?)',
-        [id, mod.id, tenantId, JSON.stringify(params.values || {}), actorUserId, t]);
+        [id, mod.id, tenantId, JSON.stringify(values), actorUserId, t]);
+      await runAutomations(tenantId, mod.id, 'record_created', values, actorUserId);
       return { entityId: id, data: { module: mod, record: await db.get('SELECT * FROM module_records WHERE id = ?', [id]) } };
     },
   },
@@ -161,9 +223,13 @@ const registry = {
     async apply(tenantId, actorUserId, params) {
       const item = await findMarketItem(params.marketItemId, params.moduleName);
       if (!item) return null;
+      const existing = await db.get('SELECT * FROM custom_modules WHERE tenant_id = ? AND source_market_id = ?', [tenantId, item.id]);
+      if (existing) {
+        return { skipEvent: true, data: { type: 'already_installed', data: existing } };
+      }
       const id = uid(); const t = now();
-      await db.run('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
-        [id, tenantId, item.name, item.entity_label, item.fields_json, actorUserId, t]);
+      await db.run('INSERT INTO custom_modules (id, tenant_id, name, entity_label, fields_json, created_by, source_market_id, created_at) VALUES (?,?,?,?,?,?,?,?)',
+        [id, tenantId, item.name, item.entity_label, item.fields_json, actorUserId, item.id, t]);
       await db.run('UPDATE marketplace_modules SET installs = installs + 1 WHERE id = ?', [item.id]);
       return { entityId: id, data: await db.get('SELECT * FROM custom_modules WHERE id = ?', [id]) };
     },
@@ -248,4 +314,4 @@ async function resolveEvent(tenantId, eventId, approve) {
   return { status: applied ? 'applied' : 'failed', data: applied ? applied.data : null };
 }
 
-module.exports = { dispatch, resolveEvent, registry, STAGES, findDeal, findContact, findModule, findMarketItem, findTeamMember };
+module.exports = { dispatch, resolveEvent, registry, STAGES, findDeal, findContact, findModule, findMarketItem, findTeamMember, AUTOMATION_ACTION_TYPES };

@@ -105,6 +105,7 @@ CREATE TABLE custom_modules (
   entity_label TEXT,
   fields_json TEXT NOT NULL,
   created_by TEXT,
+  source_market_id TEXT,   -- marketplace_modules.id this was installed from, NULL if built locally
   created_at BIGINT NOT NULL
 );
 CREATE INDEX idx_modules_tenant ON custom_modules(tenant_id);
@@ -119,6 +120,23 @@ CREATE TABLE module_records (
 );
 CREATE INDEX idx_records_module ON module_records(module_id);
 CREATE INDEX idx_records_tenant ON module_records(tenant_id);
+
+-- Real automation behind the Module Builder: one row = one rule ("when
+-- <trigger> happens on this module, run <action_type> with <config_json>").
+-- Only 'record_created' is a supported trigger today.
+CREATE TABLE module_automations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  module_id TEXT NOT NULL REFERENCES custom_modules(id) ON DELETE CASCADE,
+  trigger TEXT NOT NULL DEFAULT 'record_created',
+  action_type TEXT NOT NULL,   -- 'create_task' | 'webhook'
+  config_json TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX idx_automations_module ON module_automations(module_id);
+CREATE INDEX idx_automations_tenant ON module_automations(tenant_id);
 
 -- Shared catalogue — deliberately NOT tenant-scoped for reads (see
 -- blueprint §25/§34: only module schemas are shared, never tenant data).
@@ -207,7 +225,7 @@ DECLARE
   t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['users','contacts','deals','invoices','custom_modules',
-                            'module_records','tasks','subscription_payments']
+                            'module_records','module_automations','tasks','subscription_payments']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(

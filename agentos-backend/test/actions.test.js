@@ -137,3 +137,26 @@ test('dispatch() rejects an unrecognized actor role instead of silently skipping
     /unknown_actor_role/
   );
 });
+
+test('module.installed does not create a duplicate on a second install of the same marketplace item', async () => {
+  const { tenantId, userId } = await makeTenant();
+  const publisher = await makeTenant();
+
+  const mod = (await dispatch({ tenantId: publisher.tenantId, userId: publisher.userId, role: 'owner' }, 'module.created', {
+    name: 'Vehicles', entityLabel: 'Car', fields: [{ key: 'plate', label: 'Plate', type: 'text' }],
+  })).data;
+  const marketItem = (await dispatch({ tenantId: publisher.tenantId, userId: publisher.userId, role: 'owner' }, 'marketplace.published', {
+    moduleId: mod.id,
+  })).data;
+
+  const first = await dispatch({ tenantId, userId, role: 'owner' }, 'module.installed', { marketItemId: marketItem.id });
+  assert.equal(first.requiresApproval, false);
+  assert.ok(first.data.id);
+
+  const second = await dispatch({ tenantId, userId, role: 'owner' }, 'module.installed', { marketItemId: marketItem.id });
+  assert.equal(second.data.type, 'already_installed');
+  assert.equal(second.data.data.id, first.data.id, 'second install must return the existing row, not create a new one');
+
+  const rows = await db.all('SELECT id FROM custom_modules WHERE tenant_id = ? AND source_market_id = ?', [tenantId, marketItem.id]);
+  assert.equal(rows.length, 1, 'only one custom_modules row should exist for this tenant+market item');
+});

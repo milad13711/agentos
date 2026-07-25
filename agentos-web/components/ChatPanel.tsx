@@ -34,6 +34,34 @@ function esc(s: any) {
   return s === null || s === undefined ? '—' : String(s);
 }
 
+// Deterministic "profile picture" without any upload/storage infra: a
+// colored circle (hashed from a stable seed, so the same person always gets
+// the same color) with their initial. Cheap, always available, no broken
+// image / empty-avatar state to handle.
+const AVATAR_PALETTE = [
+  'from-[#c9942e] to-[#9c7d1c]', 'from-[#4f7cff] to-[#2f4fb0]', 'from-[#3fb37f] to-[#1f7d55]',
+  'from-[#e0607a] to-[#a03a52]', 'from-[#9a6fe0] to-[#5f3fa0]', 'from-[#2fb3ad] to-[#1a7a75]',
+];
+function avatarGradient(seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+function avatarInitial(name: string) {
+  const trimmed = (name || '').trim();
+  return trimmed ? trimmed[0].toUpperCase() : '؟';
+}
+function Avatar({ seed, label, isAgent }: { seed: string; label: string; isAgent?: boolean }) {
+  return (
+    <div
+      title={label}
+      className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 text-white bg-gradient-to-br ${avatarGradient(seed)} ${isAgent ? 'ring-2 ring-[var(--primary)]/40' : ''}`}
+    >
+      {isAgent ? '🤖' : avatarInitial(label)}
+    </div>
+  );
+}
+
 function ResultCard({ result }: { result: any }) {
   if (!result || !result.type) return null;
   const box = 'mt-1.5 border border-[var(--border)] border-r-[3px] border-r-[var(--primary)] bg-[var(--surface-2)] rounded-lg rounded-r-sm p-3 text-xs';
@@ -164,6 +192,7 @@ function ResultCard({ result }: { result: any }) {
 export default function ChatPanel() {
   const [agentName, setAgentName] = useState('Agent');
   const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState('شما');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -181,6 +210,7 @@ export default function ChatPanel() {
       const name = me.user.agent_name || 'Agent';
       setAgentName(name);
       setUserId(me.user.id);
+      setUserName(me.user.name || 'شما');
 
       let restored: Msg[] | null = null;
       try {
@@ -297,13 +327,11 @@ export default function ChatPanel() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-5 flex flex-col gap-3">
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-            <div
-              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                m.role === 'user' ? 'bg-[var(--surface-3)] border border-[var(--border)]' : 'bg-gradient-to-br from-[var(--primary)] to-[#9c7d1c] text-[#1a1400]'
-              }`}
-            >
-              {m.role === 'user' ? 'شما' : 'A'}
-            </div>
+            {m.role === 'user' ? (
+              <Avatar seed={userId || 'user'} label={userName} />
+            ) : (
+              <Avatar seed={agentName} label={agentName} isAgent />
+            )}
             <div className="max-w-[88%] sm:max-w-[74%]">
               <div
                 className={`px-3.5 py-2.5 rounded-2xl text-sm leading-7 ${

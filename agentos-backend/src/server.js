@@ -8,7 +8,7 @@ const { buildXlsx } = require('./xlsx-writer');
 const { db, uid, now } = require('./db');
 const { hashPassword, verifyPassword, signToken, authenticate } = require('./auth');
 const { act, resolvePending, audit, resolveProvider } = require('./agent');
-const { dispatch } = require('./actions');
+const { dispatch, AUTOMATION_ACTION_TYPES } = require('./actions');
 const { createPaymentRequest, verifyPayment } = require('./billing');
 
 const PORT = process.env.PORT || 8787;
@@ -378,6 +378,49 @@ route('GET', '/api/modules/:id/records', async (req, res, params) => {
   send(res, 200, await db.all('SELECT * FROM module_records WHERE module_id = ? ORDER BY created_at DESC', [mod.id]));
 });
 
+// ---- module automations (the real workflow layer behind the Module Builder) ----
+route('GET', '/api/modules/:id/automations', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const mod = await db.get('SELECT id FROM custom_modules WHERE id = ? AND tenant_id = ?', [params.id, auth.tenantId]);
+  if (!mod) return send(res, 404, { error: 'not_found' });
+  const rows = (await db.all('SELECT * FROM module_automations WHERE module_id = ? AND tenant_id = ? ORDER BY created_at ASC', [mod.id, auth.tenantId]))
+    .map(a => ({ ...a, config: JSON.parse(a.config_json) }));
+  send(res, 200, rows);
+});
+route('POST', '/api/modules/:id/automations', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const mod = await db.get('SELECT id FROM custom_modules WHERE id = ? AND tenant_id = ?', [params.id, auth.tenantId]);
+  if (!mod) return send(res, 404, { error: 'not_found' });
+  const { actionType, config } = await readBody(req);
+  if (!AUTOMATION_ACTION_TYPES.has(actionType)) return send(res, 400, { error: 'invalid_action_type' });
+  if (actionType === 'create_task' && !config?.titleTemplate) return send(res, 400, { error: 'title_template_required' });
+  if (actionType === 'webhook' && !config?.url) return send(res, 400, { error: 'url_required' });
+  const id = uid(); const t = now();
+  await db.run(`INSERT INTO module_automations (id, tenant_id, module_id, trigger, action_type, config_json, enabled, created_by, created_at)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, auth.tenantId, mod.id, 'record_created', actionType, JSON.stringify(config || {}), 1, auth.userId, t]);
+  await audit(auth.tenantId, 'user', auth.userId, 'create_module_automation', 'module_automation:' + id, { moduleId: mod.id, actionType });
+  const row = await db.get('SELECT * FROM module_automations WHERE id = ?', [id]);
+  send(res, 201, { ...row, config: JSON.parse(row.config_json) });
+});
+route('PATCH', '/api/modules/:id/automations/:automationId', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const rule = await db.get('SELECT * FROM module_automations WHERE id = ? AND module_id = ? AND tenant_id = ?', [params.automationId, params.id, auth.tenantId]);
+  if (!rule) return send(res, 404, { error: 'not_found' });
+  const { enabled } = await readBody(req);
+  await db.run('UPDATE module_automations SET enabled = ? WHERE id = ?', [enabled ? 1 : 0, rule.id]);
+  await audit(auth.tenantId, 'user', auth.userId, 'toggle_module_automation', 'module_automation:' + rule.id, { enabled });
+  send(res, 200, await db.get('SELECT * FROM module_automations WHERE id = ?', [rule.id]));
+});
+route('DELETE', '/api/modules/:id/automations/:automationId', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const rule = await db.get('SELECT * FROM module_automations WHERE id = ? AND module_id = ? AND tenant_id = ?', [params.automationId, params.id, auth.tenantId]);
+  if (!rule) return send(res, 404, { error: 'not_found' });
+  await db.run('DELETE FROM module_automations WHERE id = ?', [rule.id]);
+  await audit(auth.tenantId, 'user', auth.userId, 'delete_module_automation', 'module_automation:' + rule.id, {});
+  send(res, 200, { deleted: true });
+});
+
 // ---- marketplace ----
 route('GET', '/api/marketplace', async (req, res) => {
   const auth = await requireAuth(req, res); if (!auth) return; // still requires login, but not tenant-scoped by design
@@ -394,6 +437,9 @@ route('POST', '/api/marketplace/:id/install', async (req, res, params) => {
   const auth = await requireAuth(req, res); if (!auth) return;
   const { data } = await dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'module.installed', { marketItemId: params.id });
   if (!data) return send(res, 404, { error: 'not_found' });
+  if (data.type === 'already_installed') {
+    return send(res, 409, { error: 'already_installed', message: 'این ماژول قبلاً برای این Tenant نصب شده.', module: { ...data.data, fields: JSON.parse(data.data.fields_json) } });
+  }
   send(res, 201, { ...data, fields: JSON.parse(data.fields_json) });
 });
 

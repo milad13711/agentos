@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS custom_modules (
   entity_label TEXT,
   fields_json TEXT NOT NULL,
   created_by TEXT,
+  source_market_id TEXT,   -- marketplace_modules.id this was installed from, NULL if built locally
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_modules_tenant ON custom_modules(tenant_id);
@@ -192,6 +193,25 @@ CREATE TABLE IF NOT EXISTS module_records (
 );
 CREATE INDEX IF NOT EXISTS idx_records_module ON module_records(module_id);
 CREATE INDEX IF NOT EXISTS idx_records_tenant ON module_records(tenant_id);
+
+-- Real automation behind the Module Builder (previously modules were just
+-- forms with nothing behind them). One row = one rule: "when <trigger>
+-- happens on this module, run <action_type> with <config_json>". Only
+-- 'record_created' is a supported trigger today, but the trigger column
+-- exists so 'record_updated' etc. can be added later without a schema change.
+CREATE TABLE IF NOT EXISTS module_automations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  module_id TEXT NOT NULL REFERENCES custom_modules(id),
+  trigger TEXT NOT NULL DEFAULT 'record_created',
+  action_type TEXT NOT NULL,   -- 'create_task' | 'webhook'
+  config_json TEXT NOT NULL,  -- action-specific params, e.g. {"titleTemplate": "پیگیری {{name}}"} or {"url": "https://..."}
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_automations_module ON module_automations(module_id);
+CREATE INDEX IF NOT EXISTS idx_automations_tenant ON module_automations(tenant_id);
 
 -- Marketplace is intentionally NOT tenant-scoped for reads: it is the shared
 -- catalogue. Only the schema (fields_json) is ever stored here — never
@@ -285,6 +305,7 @@ CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
   await safeAlter(`ALTER TABLE plans ADD COLUMN features_json TEXT NOT NULL DEFAULT '{}'`);
   await safeAlter(`ALTER TABLE plans ADD COLUMN price_monthly_toman REAL NOT NULL DEFAULT 0`);
   await safeAlter(`ALTER TABLE plans ADD COLUMN price_yearly_toman REAL NOT NULL DEFAULT 0`);
+  await safeAlter(`ALTER TABLE custom_modules ADD COLUMN source_market_id TEXT`);
 
   await seedPlans(db);
 }
@@ -381,6 +402,7 @@ CREATE TABLE IF NOT EXISTS custom_modules (
   entity_label TEXT,
   fields_json TEXT NOT NULL,
   created_by TEXT,
+  source_market_id TEXT,
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_modules_tenant ON custom_modules(tenant_id);
@@ -395,6 +417,20 @@ CREATE TABLE IF NOT EXISTS module_records (
 );
 CREATE INDEX IF NOT EXISTS idx_records_module ON module_records(module_id);
 CREATE INDEX IF NOT EXISTS idx_records_tenant ON module_records(tenant_id);
+
+CREATE TABLE IF NOT EXISTS module_automations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  module_id TEXT NOT NULL REFERENCES custom_modules(id) ON DELETE CASCADE,
+  trigger TEXT NOT NULL DEFAULT 'record_created',
+  action_type TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_automations_module ON module_automations(module_id);
+CREATE INDEX IF NOT EXISTS idx_automations_tenant ON module_automations(tenant_id);
 
 CREATE TABLE IF NOT EXISTS marketplace_modules (
   id TEXT PRIMARY KEY,

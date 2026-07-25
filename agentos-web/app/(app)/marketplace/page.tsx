@@ -5,7 +5,11 @@ import { useEffect, useState } from 'react';
 async function api(path: string, opts: RequestInit = {}) {
   const res = await fetch(`/api/proxy/${path}`, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || 'request_failed');
+  if (!res.ok) {
+    const err: any = new Error(data.message || data.error || 'request_failed');
+    err.code = data.error;
+    throw err;
+  }
   return data;
 }
 
@@ -61,7 +65,7 @@ export default function MarketplacePage() {
       setNotice('ماژول نصب شد — از صفحه «ماژول‌ها» قابل استفاده‌ست.');
       await load();
     } catch (e: any) {
-      setNotice('خطا: ' + e.message);
+      setNotice(e.code === 'already_installed' ? 'این ماژول قبلاً برای شما نصب شده — از صفحه «ماژول‌ها» قابل استفاده‌ست.' : 'خطا: ' + e.message);
     } finally {
       setBusyId(null);
     }

@@ -44,7 +44,9 @@ const RESULT_TYPE_OF = {
 };
 function toLegacyResult(eventType, data) {
   if (!data) return null;
-  if (data.type === 'plan_limit') return data; // module.created's plan-limit case is already {type, data}
+  // module.created's plan-limit case and module.installed's duplicate-install
+  // case are both already shaped as {type, data} by dispatch()'s skipEvent path.
+  if (data.type === 'plan_limit' || data.type === 'already_installed') return data;
   return { type: RESULT_TYPE_OF[eventType], data };
 }
 const DOMAIN_OF = {
