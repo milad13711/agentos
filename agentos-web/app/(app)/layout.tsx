@@ -19,6 +19,7 @@ const NAV = [
   { href: '/deals', label: '💼 معاملات و سرنخ‌ها' },
   { href: '/contacts', label: '👤 مخاطبین' },
   { href: '/modules', label: '🧩 ماژول‌ها' },
+  { href: '/marketplace', label: '🛒 Marketplace' },
   { href: '/tasks', label: '✅ وظایف و پیگیری' },
   { href: '/team', label: '👥 تیم و دسترسی‌ها' },
   { href: '/reports', label: '📊 گزارش‌ها' },
