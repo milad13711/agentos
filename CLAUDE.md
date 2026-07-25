@@ -64,4 +64,9 @@ Free (۰) → Starter (۹۹۰هزار/ماه) → Pro (۲.۹۹۹میلیون/م�
 3. ✅ ~~راه‌اندازی CI/CD ساده~~ — `.github/workflows/deploy.yml` (build gate + دیپلوی خودکار SSH). راهنمای setup در `docs/ci-cd-setup.md`
 4. ✅ ~~Marketplace UI در Next.js~~ — صفحه `/marketplace` اضافه شد (انتشار ماژول خودت + نصب از کاتالوگ مشترک)، بک‌اندش از قبل آماده بود
 5. مهاجرت PostgreSQL (فقط وقتی واقعاً به چند Instance نیاز شد — `schema-postgres.sql` آماده‌ست ولی وایر نشده؛ چک‌لیست کامل در `agentos-deploy/DEPLOY.md`)
-6. Zarinpal واقعی (خروج از Sandbox)
+6. Zarinpal واقعی — **عمداً به تعویق افتاد**: دامنه فعلی (`exirsms.ir`) فقط تستیه، برای پروژه نهایی نیست؛ گرفتن Merchant ID روی این دامنه بعداً موقع مهاجرت به دامنه اصلی دردسر می‌سازه. وقتی دامنه نهایی مشخص شد، اول اون رو ست کن، بعد Zarinpal.
+
+## کارهای اضافه‌ای که خارج از این لیست انجام شد (ولی مهم بودن)
+
+- ✅ تست‌های خودکار بک‌اند (`agentos-backend/test/`, با `node:test` بدون dependency جدید) برای `dispatch`/Approval Gate/ایزوله‌بودن Tenant — به CI (`npm test` در `build-check`) وصل شدن، چون این‌ها دقیقاً چیزهاییه که فاز ۱ رو migrate کردیم و فقط با curl دستی تست شده بودن.
+- ✅ Super Admin Dashboard در Next.js (`/admin`) — قبلاً فقط تو `frontend-local/admin.html` (HTML خام) بود. همه‌ی ۵ تب (KPI، Tenantها، پلن‌ها، Marketplace، Audit Log) رو داره؛ بک‌اندش تغییری نکرد.
