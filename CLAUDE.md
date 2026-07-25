@@ -1,5 +1,9 @@
 # AgentOS — پروژه Agent-First CRM فارسی
 
+## برای session بعدی (خلاصه‌ی وضعیت)
+
+همه‌چیز commit و push شده — برنچ `claude/agentos-phase-0-1-setup-vcjcz8` روی GitHub (`milad13711/agentos`) کاملاً به‌روزه، هیچ PR ای هنوز باز نشده (اگه لازم شد، صریح درخواست بده). production هم با آخرین commit همین برنچ sync‌ه (CI/CD خودکار — گیر #۸ پایین). قبل از هر کاری، `git log --oneline -20` و کل این فایل رو بخون تا context کامل باشه؛ سندهای تکمیلی: `docs/phase1-event-schema-agent-roles.md` (طراحی Event/dispatch) و `docs/ci-cd-setup.md`. لیست کامل کارهای انجام‌شده و باقی‌مونده دقیقاً همین‌جا پایین‌تره — چیز مهمی خارج از این فایل و خودِ کد نیست.
+
 ## معماری کلی
 
 ```
@@ -45,7 +49,7 @@ rm -rf agentos-backend/data
 5. ✅ **رفع شد (فاز ۱)**: منطق `create_contact`/`create_deal` و بقیه اکشن‌های نویسا دیگه دوبار پیاده‌سازی نشده — یک `dispatch()` واحد در `agentos-backend/src/actions.js` که هم `server.js` هم `agent.js` صداش می‌زنن. جزئیات کامل در `docs/phase1-event-schema-agent-roles.md`.
 6. Node 22 لازمه (نه کمتر) — چون از `node:sqlite` استفاده می‌کنیم که Native و بدون هیچ dependency خارجیه.
 7. این پروژه یک Git repository واقعی داره، روی GitHub (`milad13711/agentos`، برنچ فعلی `claude/agentos-phase-0-1-setup-vcjcz8`). هر تغییری باید commit و push بشه — دیگه کپی‌کردن zip/scp دستی نکن.
-8. **دیپلوی روی سرور فعلاً کاملاً دستی‌ست** (بند ۳ فازهای باقی‌مونده، هنوز CI/CD نداریم): SSH به سرور، `cd ~/agentos-src && git pull ...`، `rsync` به `~/agentos-backend`/`~/agentos-web`، بعد `docker compose up -d --build`. این محیط Claude Code خودش SSH نداره (فقط پراکسی HTTP/HTTPS به میزبان‌های مجاز) — یعنی دستورهای دیپلوی رو باید *به کاربر* داد تا خودش رو سرور اجرا کنه، نه اینکه فرض بشه مستقیم قابل‌اجراست.
+8. ✅ **دیگه دستی نیست** — `.github/workflows/deploy.yml` هر `git push` به برنچ `claude/agentos-phase-0-1-setup-vcjcz8` رو خودکار (بعد از یک build gate واقعی) رو سرور دیپلوی می‌کنه. جزئیات و راه‌اندازی اولیه در `docs/ci-cd-setup.md`. **این محیط Claude Code همچنان خودش SSH مستقیم نداره** (فقط پراکسی HTTP/HTTPS به میزبان‌های مجاز) — یعنی برای هر عملیات دستی خارج از CI/CD (مثل چک‌کردن لاگ زنده‌ی سرور)، دستورها رو باید *به کاربر* داد تا خودش رو سرور اجرا کنه.
 9. Dockerfile بک‌اند فقط `src/` و `package.json` رو کپی می‌کرد — اگه فایل جدیدی مثل `scripts/` اضافه کردی، حتماً `COPY` مربوطه رو هم به Dockerfile اضافه کن، وگرنه توی کانتینر نیست حتی اگه توی ریپو باشه.
 10. Next.js standalone output (در `agentos-web` Docker image) پیش‌فرض روی متغیر `HOSTNAME` بایند می‌شه که Docker خودکار به container ID ست می‌کنه — نه `0.0.0.0`. این باعث fail شدن HEALTHCHECK و هر تست `localhost` داخل کانتینر می‌شه. Dockerfile الان صریح `ENV HOSTNAME=0.0.0.0` داره؛ اگه یه‌بار دیگه container یهو unhealthy شد، همینو چک کن.
 11. تماس‌های AI Gateway (`callAnthropic`/`callOpenAI` در `agent.js`) یک timeout ۲۵ ثانیه‌ای دارن (`AI_GATEWAY_TIMEOUT_MS`). قبلاً نداشتن و اگه GapGPT کند/بی‌پاسخ می‌شد، درخواست برای همیشه "در حال پردازش" می‌موند بدون هیچ خطایی تو لاگ.
@@ -66,9 +70,16 @@ Free (۰) → Starter (۹۹۰هزار/ماه) → Pro (۲.۹۹۹میلیون/م�
 4. ✅ ~~Marketplace UI در Next.js~~ — صفحه `/marketplace` اضافه شد (انتشار ماژول خودت + نصب از کاتالوگ مشترک)، بک‌اندش از قبل آماده بود
 5. مهاجرت PostgreSQL (فقط وقتی واقعاً به چند Instance نیاز شد — `schema-postgres.sql` آماده‌ست ولی وایر نشده؛ چک‌لیست کامل در `agentos-deploy/DEPLOY.md`)
 6. Zarinpal واقعی — **عمداً به تعویق افتاد**: دامنه فعلی (`exirsms.ir`) فقط تستیه، برای پروژه نهایی نیست؛ گرفتن Merchant ID روی این دامنه بعداً موقع مهاجرت به دامنه اصلی دردسر می‌سازه. وقتی دامنه نهایی مشخص شد، اول اون رو ست کن، بعد Zarinpal.
+7. (پایین‌اولویت، امنیتی) Refresh Token / Revocation List — تا این اضافه نشه، تغییر نقش یا حذف/غیرفعال‌کردن کاربر ممکنه تا ۱۲ ساعت طول بکشه کامل اعمال بشه (جزئیات در «کارهای اضافه‌ای» پایین، بخش بازبینی امنیت).
 
 ## کارهای اضافه‌ای که خارج از این لیست انجام شد (ولی مهم بودن)
 
 - ✅ تست‌های خودکار بک‌اند (`agentos-backend/test/`, با `node:test` بدون dependency جدید) برای `dispatch`/Approval Gate/ایزوله‌بودن Tenant — به CI (`npm test` در `build-check`) وصل شدن، چون این‌ها دقیقاً چیزهاییه که فاز ۱ رو migrate کردیم و فقط با curl دستی تست شده بودن.
 - ✅ Super Admin Dashboard در Next.js (`/admin`) — قبلاً فقط تو `frontend-local/admin.html` (HTML خام) بود. همه‌ی ۵ تب (KPI، Tenantها، پلن‌ها، Marketplace، Audit Log) رو داره؛ بک‌اندش تغییری نکرد.
 - ✅ کل UI موبایل/ریسپانسیو شد: منوی sidebar روی موبایل به drawer قابل‌باز/بسته تبدیل شد (`components/AppShell.tsx`)، همه‌ی جدول‌ها به‌جای شکستن layout خودشون جدا اسکرول افقی می‌گیرن، و باگ واقعی `overflow-y-auto` (گیر #۱۴ بالا) که فقط رو گوشی با لمس قابل کشف بود پیدا و فیکس شد.
+- ✅ یک بازبینی امنیتی کامل انجام شد (auth، ایزوله‌بودن Tenant، کدهای جدید فاز ۱/Admin/Marketplace). ۴ مورد واقعی پیدا و فیکس شد:
+  - XSS ذخیره‌شده تو تولید PDF گزارش (`reports/page.tsx`) — اسم مخاطب/معامله بدون escape تو HTML تزریق می‌شد؛ با DOM API امن (`textContent`) بازنویسی شد.
+  - حذف/غیرفعال‌کردن پرسنل واقعاً دسترسی رو لغو نمی‌کرد — توکن قدیمی تا ۱۲ ساعت کار می‌کرد و حتی می‌شد دوباره لاگین کرد؛ الان `requireAuth()` و `/api/auth/login` وضعیت زنده‌ی `users.status` رو چک می‌کنن.
+  - تزریق فرمول تو خروجی CSV/Excel گزارش‌ها (مثل اسم مخاطب `=cmd|...`) — با prefix کردن `'` (استاندارد OWASP) خنثی شد، هم تو CSV هم تو `.xlsx` واقعی.
+  - یک رگرسیون واقعی از فاز ۱: `billing.js` هنوز تو جدول حذف‌شده‌ی `audit_logs` می‌نوشت (تایید پرداخت واقعی زرین‌پال رو crash می‌کرد) — به `audit()` استاندارد (که رو `events` می‌نویسه) منتقل شد.
+  - **یک مورد شناخته‌شده و عمداً فیکس‌نشده باقی مونده**: تغییر نقش کاربر (مثلاً admin→member) تا ۱۲ ساعت (تا expire شدن توکن) اعمال نمی‌شه، چون نقش تو خودِ توکن امضاشده ذخیره‌ست نه دیتابیس زنده. فیکس واقعیش نیاز به زیرساخت Refresh Token/Revocation List داره (همون چیزی که تو README بک‌اند به‌عنوان کار آینده علامت خورده). شدتش پایینه (کاربر فقط دسترسی «قدیمی‌تر» داره، نه ارتقایافته) ولی باید یه‌جا تصمیم گرفته بشه کی این زیرساخت اضافه بشه.
