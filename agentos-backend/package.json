@@ -13,6 +13,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "socks-proxy-agent": "^10.1.0"
   }
 }

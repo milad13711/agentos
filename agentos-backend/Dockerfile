@@ -1,6 +1,8 @@
 # AgentOS Backend — mostly pure Node core (node:http, node:sqlite,
-# node:crypto); the one real dependency is `pg`, used only when DATABASE_URL
-# is set to switch src/db.js over to PostgreSQL (see agentos-deploy/DEPLOY.md).
+# node:crypto); real dependencies: `pg` (only used when DATABASE_URL is set,
+# see agentos-deploy/DEPLOY.md) and `socks-proxy-agent` (only used when
+# TELEGRAM_SOCKS_PROXY is set, for deployments where api.telegram.org is
+# network-filtered — see src/telegram.js).
 FROM node:22-alpine
 
 WORKDIR /app

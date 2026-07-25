@@ -14,6 +14,20 @@
 // TELEGRAM_API_BASE defaults to the real Telegram API but is overridable so
 // tests (and this sandboxed dev environment, which cannot reach
 // api.telegram.org) can point it at a local fake server instead.
+//
+// TELEGRAM_SOCKS_PROXY: api.telegram.org is DNS-hijacked to a private/
+// internal address from inside Iran (confirmed: even querying 8.8.8.8
+// directly for it returns the same bogus 10.x address — network-level
+// interception, not a local resolver misconfiguration) — the same class of
+// block that made GapGPT necessary for OpenAI. When this is set to a
+// socks5://[user:pass@]host:port URL, every Telegram API call is routed
+// through it instead of a direct connection. Requests go over node:https
+// with a SocksProxyAgent rather than global fetch, because undici's fetch
+// dispatcher isn't compatible with socks-proxy-agent's classic Node
+// http.Agent interface — this is the officially supported way to pair the
+// two. Left unset, behavior is unchanged (plain fetch, used by tests too).
+const https = require('node:https');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const { db, now } = require('./db');
 const { act, resolvePending } = require('./agent');
 
@@ -32,13 +46,61 @@ function apiUrl(method) {
   return `${base}/bot${botToken()}/${method}`;
 }
 
-async function callTelegram(method, params) {
-  const res = await fetch(apiUrl(method), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params || {}),
+let cachedAgent = null;
+let cachedProxyUrl = null;
+function getProxyAgent() {
+  const proxyUrl = process.env.TELEGRAM_SOCKS_PROXY;
+  if (!proxyUrl) return null;
+  if (cachedAgent && cachedProxyUrl === proxyUrl) return cachedAgent;
+  cachedAgent = new SocksProxyAgent(proxyUrl);
+  cachedProxyUrl = proxyUrl;
+  return cachedAgent;
+}
+
+// extraOptions lets tests inject a `ca` for a self-signed test server; real
+// calls (a genuinely trusted api.telegram.org cert) never need it.
+function requestViaAgent(urlStr, payload, agent, extraOptions) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const body = JSON.stringify(payload || {});
+    const req = https.request({
+      hostname: url.hostname,
+      servername: url.hostname, // TLS SNI/cert check target — a custom agent otherwise leaves this to guess
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      agent,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 35_000,
+      ...extraOptions,
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('telegram request timed out')));
+    req.on('error', reject);
+    req.write(body);
+    req.end();
   });
-  const data = await res.json().catch(() => null);
+}
+
+async function callTelegram(method, params) {
+  const url = apiUrl(method);
+  const agent = getProxyAgent();
+  let data;
+  if (agent) {
+    data = await requestViaAgent(url, params, agent);
+  } else {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {}),
+    });
+    data = await res.json().catch(() => null);
+  }
   if (!data || !data.ok) console.error(`[telegram] ${method} failed:`, data);
   return data;
 }
@@ -210,4 +272,6 @@ module.exports = {
   startPolling, stopPolling, pollOnce,
   createLinkCode, unlink, getBotUsername,
   sendMessage, handleMessage, handleCallbackQuery,
+  // exported for test/telegram-proxy.test.js only
+  requestViaAgent, getProxyAgent,
 };

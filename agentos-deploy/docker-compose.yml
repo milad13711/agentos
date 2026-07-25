@@ -31,6 +31,9 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Only needed if api.telegram.org is filtered from this server (it is,
+      # from Iran) — routes Telegram API calls through a SOCKS5 proxy instead.
+      - TELEGRAM_SOCKS_PROXY=${TELEGRAM_SOCKS_PROXY:-}
       - ZARINPAL_MERCHANT_ID=${ZARINPAL_MERCHANT_ID:-}
       - ZARINPAL_SANDBOX=${ZARINPAL_SANDBOX:-1}
       - PUBLIC_APP_URL=${PUBLIC_APP_URL:?set your real public domain, e.g. https://exirsms.ir}
