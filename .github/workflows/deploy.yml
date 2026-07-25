@@ -31,7 +31,11 @@ jobs:
           npm ci
           npm run build
 
-      - name: Syntax-check agentos-backend (zero deps, no build step)
+      - name: Install agentos-backend dependencies
+        working-directory: agentos-backend
+        run: npm ci
+
+      - name: Syntax-check agentos-backend
         working-directory: agentos-backend
         run: |
           for f in src/*.js scripts/*.js; do node --check "$f"; done
