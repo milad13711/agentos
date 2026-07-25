@@ -1,19 +1,16 @@
 -- ============================================================================
--- AgentOS — PostgreSQL schema (reference / future migration target)
+-- AgentOS — PostgreSQL schema
 -- ============================================================================
--- STATUS: NOT YET WIRED IN. The running app still uses SQLite (src/db.js).
--- This file is a faithful translation of that schema PLUS real Row-Level
--- Security, which SQLite cannot do natively (today's tenant isolation is
--- enforced only in the application layer — every query manually filters by
--- tenant_id). RLS makes the *database itself* refuse cross-tenant reads/
--- writes even if application code has a bug — a genuine defense-in-depth
--- upgrade, not just a swap of storage engines.
+-- STATUS: wired in. src/db.js uses this schema when DATABASE_URL is set
+-- (falls back to SQLite otherwise, for zero-dependency local dev). Applied
+-- and verified end-to-end against a real PostgreSQL 16 instance.
 --
--- Migration is a real, non-trivial piece of work (see DEPLOY.md "PostgreSQL
--- migration checklist") because src/db.js and every `db.prepare(...).get/
--- all/run()` call in server.js and agent.js are synchronous (SQLite-style);
--- the `pg` driver is async, so every call site needs `await pool.query(...)`.
--- Do this as its own dedicated, tested change — not blindly applied.
+-- This file is a faithful translation of the SQLite schema (src/db.js) PLUS
+-- real Row-Level Security, which SQLite cannot do natively (SQLite's tenant
+-- isolation is enforced only in the application layer — every query manually
+-- filters by tenant_id). RLS makes the *database itself* refuse cross-tenant
+-- reads/writes even if application code has a bug — a genuine defense-in-depth
+-- upgrade, not just a swap of storage engines.
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- for gen_random_uuid(), optional
@@ -61,7 +58,7 @@ CREATE TABLE plans (
   modules_limit INTEGER,
   marketplace_access BOOLEAN NOT NULL DEFAULT TRUE,
   support_level TEXT NOT NULL DEFAULT 'community',
-  features_json JSONB NOT NULL DEFAULT '{}',
+  features_json TEXT NOT NULL DEFAULT '{}',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at BIGINT NOT NULL
 );
@@ -106,7 +103,7 @@ CREATE TABLE custom_modules (
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   entity_label TEXT,
-  fields_json JSONB NOT NULL,
+  fields_json TEXT NOT NULL,
   created_by TEXT,
   created_at BIGINT NOT NULL
 );
@@ -116,7 +113,7 @@ CREATE TABLE module_records (
   id TEXT PRIMARY KEY,
   module_id TEXT NOT NULL REFERENCES custom_modules(id) ON DELETE CASCADE,
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  values_json JSONB NOT NULL,
+  values_json TEXT NOT NULL,
   created_by TEXT,
   created_at BIGINT NOT NULL
 );
@@ -129,38 +126,51 @@ CREATE TABLE marketplace_modules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   entity_label TEXT,
-  fields_json JSONB NOT NULL,
+  fields_json TEXT NOT NULL,
   published_by_tenant TEXT NOT NULL,
   installs INTEGER NOT NULL DEFAULT 0,
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   created_at BIGINT NOT NULL
 );
 
-CREATE TABLE audit_logs (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,     -- intentionally no FK: 'platform' is a valid sentinel value for admin actions
-  actor_type TEXT NOT NULL,
-  actor_id TEXT,
-  action TEXT NOT NULL,
-  entity TEXT,
-  detail_json JSONB,
-  created_at BIGINT NOT NULL
-);
-CREATE INDEX idx_audit_tenant ON audit_logs(tenant_id);
-
-CREATE TABLE pending_actions (
+-- Real billing transactions (Zarinpal) — AgentOS's own subscription revenue,
+-- separate from a tenant's own `invoices` (their business invoices).
+CREATE TABLE subscription_payments (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  domain TEXT NOT NULL,
-  params_json JSONB NOT NULL,
-  reply TEXT,
-  status TEXT NOT NULL DEFAULT 'pending',
+  plan_key TEXT NOT NULL,
+  billing_cycle TEXT NOT NULL,          -- monthly | yearly
+  amount_toman BIGINT NOT NULL,
+  authority TEXT NOT NULL UNIQUE,       -- Zarinpal's payment session id
+  ref_id TEXT,                          -- Zarinpal's transaction reference, set after verified payment
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | failed
+  created_at BIGINT NOT NULL,
+  paid_at BIGINT
+);
+CREATE INDEX idx_payments_tenant ON subscription_payments(tenant_id);
+CREATE INDEX idx_payments_authority ON subscription_payments(authority);
+
+-- Phase 1: unified write log (docs/phase1-event-schema-agent-roles.md),
+-- replacing the audit_logs + pending_actions tables this file used to have.
+-- Every mutation and audit-trail entry goes here — see actions.js
+-- (dispatch/resolveEvent) and agent.js's audit().
+CREATE TABLE events (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,     -- intentionally no FK: 'platform' is a valid sentinel value for admin actions
+  type TEXT NOT NULL,          -- 'contact.created', 'deal.stage_changed', ...
+  actor_type TEXT NOT NULL,    -- 'user' | 'agent' | 'system'
+  actor_id TEXT,               -- users.id — the human responsible, even when actor_role='agent'
+  actor_role TEXT NOT NULL,    -- 'owner' | 'admin' | 'member' | 'agent'
+  entity_type TEXT,
+  entity_id TEXT,
+  payload_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'applied', -- 'applied' | 'pending_approval' | 'rejected'
   created_at BIGINT NOT NULL,
   resolved_at BIGINT
 );
-CREATE INDEX idx_pending_tenant ON pending_actions(tenant_id);
+CREATE INDEX idx_events_tenant ON events(tenant_id);
+CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
+CREATE INDEX idx_events_status ON events(status);
 
 CREATE TABLE tasks (
   id TEXT PRIMARY KEY,
@@ -187,26 +197,33 @@ CREATE INDEX idx_tasks_assignee ON tasks(assignee_id);
 -- itself still blocks the cross-tenant row — that's the whole benefit.
 -- ============================================================================
 
+-- Every tenant-scoped policy also allows a session flagged
+-- app.is_super_admin = 'true' to see all rows — the Super Admin Dashboard
+-- (/api/admin/*) deliberately reads/aggregates across every tenant, not just
+-- the caller's own, so it needs a real bypass rather than juggling
+-- app.current_tenant_id per row.
 DO $$
 DECLARE
   t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['users','contacts','deals','invoices','custom_modules',
-                            'module_records','pending_actions','tasks']
+                            'module_records','tasks','subscription_payments']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
-      'CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.current_tenant_id'', true))',
+      'CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.current_tenant_id'', true) OR current_setting(''app.is_super_admin'', true) = ''true'')',
       t
     );
   END LOOP;
 END $$;
 
--- audit_logs uses the same session variable but allows the 'platform'
--- sentinel value (used for Super Admin actions not tied to one tenant).
-ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON audit_logs
-  USING (tenant_id = current_setting('app.current_tenant_id', true) OR tenant_id = 'platform');
+-- events additionally allows the 'platform' sentinel value (used for
+-- Super Admin actions not tied to one tenant).
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON events
+  USING (tenant_id = current_setting('app.current_tenant_id', true)
+         OR tenant_id = 'platform'
+         OR current_setting('app.is_super_admin', true) = 'true');
 
 -- tenants itself: a row is visible if its id matches the session tenant,
 -- OR the session is flagged as super-admin (set app.is_super_admin = 'true').

@@ -27,7 +27,7 @@ async function createPaymentRequest({ tenantId, userId, planKey, billingCycle, e
   if (!merchantId) throw new Error('ZARINPAL_MERCHANT_ID تنظیم نشده — در .env بک‌اند اضافه کن.');
   if (!publicAppUrl) throw new Error('PUBLIC_APP_URL تنظیم نشده — باید دامنه عمومی واقعی باشه (مثل https://exirsms.ir).');
 
-  const plan = db.prepare('SELECT * FROM plans WHERE key = ?').get(planKey);
+  const plan = await db.get('SELECT * FROM plans WHERE key = ?', [planKey]);
   if (!plan) throw new Error('پلن نامعتبر است.');
   const amountToman = billingCycle === 'yearly' ? plan.price_yearly_toman : plan.price_monthly_toman;
   if (!amountToman || amountToman <= 0) throw new Error('این پلن رایگانه یا قیمتش تنظیم نشده — نیازی به پرداخت نداره.');
@@ -53,21 +53,21 @@ async function createPaymentRequest({ tenantId, userId, planKey, billingCycle, e
 
   const authority = data.data.authority;
   const id = uid();
-  db.prepare(`INSERT INTO subscription_payments
+  await db.run(`INSERT INTO subscription_payments
               (id, tenant_id, plan_key, billing_cycle, amount_toman, authority, status, created_at)
-              VALUES (?,?,?,?,?,?,?,?)`)
-    .run(id, tenantId, planKey, billingCycle, amountToman, authority, 'pending', now());
+              VALUES (?,?,?,?,?,?,?,?)`,
+    [id, tenantId, planKey, billingCycle, amountToman, authority, 'pending', now()]);
 
   return { redirectUrl: zarinpalStartPayUrl(authority), authority, paymentId: id };
 }
 
 async function verifyPayment({ tenantId, authority, status }) {
-  const payment = db.prepare('SELECT * FROM subscription_payments WHERE authority = ? AND tenant_id = ?').get(authority, tenantId);
+  const payment = await db.get('SELECT * FROM subscription_payments WHERE authority = ? AND tenant_id = ?', [authority, tenantId]);
   if (!payment) return { ok: false, error: 'پرداخت مربوطه پیدا نشد.' };
   if (payment.status === 'paid') return { ok: true, alreadyProcessed: true, payment };
 
   if (status !== 'OK') {
-    db.prepare(`UPDATE subscription_payments SET status = 'failed' WHERE id = ?`).run(payment.id);
+    await db.run(`UPDATE subscription_payments SET status = 'failed' WHERE id = ?`, [payment.id]);
     return { ok: false, error: 'پرداخت توسط کاربر لغو یا ناموفق بود.' };
   }
 
@@ -86,9 +86,9 @@ async function verifyPayment({ tenantId, authority, status }) {
 
   if (code === 100 || code === 101) {
     const refId = data.data.ref_id || null;
-    db.prepare(`UPDATE subscription_payments SET status = 'paid', ref_id = ?, paid_at = ? WHERE id = ?`)
-      .run(refId ? String(refId) : null, now(), payment.id);
-    db.prepare('UPDATE tenants SET plan_key = ? WHERE id = ?').run(payment.plan_key, tenantId);
+    await db.run(`UPDATE subscription_payments SET status = 'paid', ref_id = ?, paid_at = ? WHERE id = ?`,
+      [refId ? String(refId) : null, now(), payment.id]);
+    await db.run('UPDATE tenants SET plan_key = ? WHERE id = ?', [payment.plan_key, tenantId]);
     // Audit logging is the caller's job now (server.js has the authenticated
     // userId; billing.js doesn't) — see 'subscription_paid' in the
     // /api/billing/verify route. This also keeps billing.js from writing to
@@ -96,7 +96,7 @@ async function verifyPayment({ tenantId, authority, status }) {
     return { ok: true, refId, planKey: payment.plan_key, amountToman: payment.amount_toman };
   }
 
-  db.prepare(`UPDATE subscription_payments SET status = 'failed' WHERE id = ?`).run(payment.id);
+  await db.run(`UPDATE subscription_payments SET status = 'failed' WHERE id = ?`, [payment.id]);
   const msg = (data && (data.errors?.message || data.data?.message)) || `کد ${code}`;
   return { ok: false, error: `تایید پرداخت ناموفق: ${msg}` };
 }

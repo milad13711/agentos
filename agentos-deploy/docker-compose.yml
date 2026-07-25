@@ -16,6 +16,14 @@ services:
     environment:
       - PORT=8787
       - AGENTOS_DB_PATH=/app/data/agentos.sqlite
+      # Leave DATABASE_URL unset (the default) to keep using SQLite — fine
+      # for a single instance, and what production runs today. Set it (and
+      # uncomment the `postgres` service + `depends_on` below) only once you
+      # actually need more than one backend instance; src/db.js switches to
+      # Postgres automatically whenever this is non-empty. See
+      # agentos-deploy/DEPLOY.md "PostgreSQL migration checklist" before
+      # flipping this on a database with real data in it.
+      - DATABASE_URL=${DATABASE_URL:-}
       - AGENTOS_TOKEN_SECRET=${AGENTOS_TOKEN_SECRET:?set a long random secret in .env}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - AGENTOS_MODEL=${AGENTOS_MODEL:-claude-sonnet-4-6}
@@ -33,6 +41,35 @@ services:
     # Not exposed to the host on purpose — only the "web" service and Caddy
     # talk to it, over the internal Docker network. The AI key never needs
     # to leave this container.
+    # Uncomment once DATABASE_URL above points at the `postgres` service:
+    # depends_on: [postgres]
+
+  # Optional — only needed once you're actually running more than one
+  # backend instance (SQLite is a single local file, fine until then).
+  # To switch: set DATABASE_URL=postgres://agentos:${POSTGRES_PASSWORD}@postgres:5432/agentos
+  # in .env, uncomment this service and backend's `depends_on` above, run
+  # `docker compose up -d --build`, then migrate existing data with
+  # `docker compose exec backend node scripts/migrate-sqlite-to-postgres.js`
+  # (point AGENTOS_DB_PATH at the old SQLite volume for that one run).
+  # postgres:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_USER=agentos
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set a real password in .env}
+  #     - POSTGRES_DB=agentos
+  #   volumes:
+  #     - agentos_postgres_data:/var/lib/postgresql/data
+  #   networks: [agentos]
+  #   # Not exposed to the host, same reasoning as backend: only reachable
+  #   # from other containers on the internal network.
+  #   # Deliberately NOT mounting schema-postgres.sql as a docker-entrypoint
+  #   # init script: src/db.js already creates every table itself on boot
+  #   # (CREATE TABLE IF NOT EXISTS, no RLS) — schema-postgres.sql additionally
+  #   # documents Row-Level Security policies that are NOT wired to the app's
+  #   # connections yet (see the comment at the top of that file); running it
+  #   # verbatim here would silently enable RLS and break login/cross-tenant
+  #   # reads the app doesn't yet set session variables for.
 
   web:
     build: ./agentos-web
@@ -63,3 +100,4 @@ volumes:
   agentos_data:   # the SQLite database — this is your real business data, back it up
   caddy_data:     # TLS certificates (auto-renewed by Caddy)
   caddy_config:
+  agentos_postgres_data:  # only used once the optional `postgres` service above is enabled

@@ -14,124 +14,125 @@ const dbPath = path.join(os.tmpdir(), `agentos-test-actions-${process.pid}-${Dat
 process.env.AGENTOS_DB_PATH = dbPath;
 process.env.AGENTOS_TOKEN_SECRET = 'test-secret';
 
-const { db, uid, now } = require('../src/db');
+const { db, uid, now, ready } = require('../src/db');
 const { dispatch, resolveEvent } = require('../src/actions');
 
+test.before(() => ready);
 test.after(() => {
   try { fs.unlinkSync(dbPath); } catch { /* ignore */ }
 });
 
-function makeTenant() {
+async function makeTenant() {
   const tenantId = uid();
   const userId = uid();
   const t = now();
-  db.prepare('INSERT INTO tenants (id, name, plan, plan_key, status, ai_provider, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(tenantId, 'Test Co', 'trial', 'free', 'active', 'anthropic', t);
-  db.prepare('INSERT INTO users (id, tenant_id, name, email, password_hash, salt, role, created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(userId, tenantId, 'Test User', `${userId}@test.local`, 'x', 'x', 'owner', t);
+  await db.run('INSERT INTO tenants (id, name, plan, plan_key, status, ai_provider, created_at) VALUES (?,?,?,?,?,?,?)',
+    [tenantId, 'Test Co', 'trial', 'free', 'active', 'anthropic', t]);
+  await db.run('INSERT INTO users (id, tenant_id, name, email, password_hash, salt, role, created_at) VALUES (?,?,?,?,?,?,?,?)',
+    [userId, tenantId, 'Test User', `${userId}@test.local`, 'x', 'x', 'owner', t]);
   return { tenantId, userId };
 }
 
-test('dispatch() applies a non-sensitive action immediately regardless of caller role', () => {
-  const { tenantId, userId } = makeTenant();
+test('dispatch() applies a non-sensitive action immediately regardless of caller role', async () => {
+  const { tenantId, userId } = await makeTenant();
 
-  const asOwner = dispatch({ tenantId, userId, role: 'owner' }, 'contact.created', { name: 'Ali' });
+  const asOwner = await dispatch({ tenantId, userId, role: 'owner' }, 'contact.created', { name: 'Ali' });
   assert.equal(asOwner.requiresApproval, false);
   assert.equal(asOwner.data.name, 'Ali');
 
-  const asAgent = dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', { name: 'Reza' });
+  const asAgent = await dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', { name: 'Reza' });
   assert.equal(asAgent.requiresApproval, false);
   assert.equal(asAgent.data.name, 'Reza');
 
-  const events = db.prepare('SELECT type, actor_role, status FROM events WHERE tenant_id = ? ORDER BY created_at').all(tenantId);
+  const events = await db.all('SELECT type, actor_role, status FROM events WHERE tenant_id = ? ORDER BY created_at', [tenantId]);
   assert.equal(events.length, 2);
   assert.deepEqual(events.map(e => e.actor_role), ['owner', 'agent']);
   assert.ok(events.every(e => e.type === 'contact.created' && e.status === 'applied'));
 });
 
-test('dispatch() queues a sensitive action for the agent role instead of applying it', () => {
-  const { tenantId, userId } = makeTenant();
-  const deal = dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Big Deal' }).data;
+test('dispatch() queues a sensitive action for the agent role instead of applying it', async () => {
+  const { tenantId, userId } = await makeTenant();
+  const deal = (await dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Big Deal' })).data;
 
-  const result = dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
+  const result = await dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
   assert.equal(result.requiresApproval, true);
   assert.ok(result.eventId);
 
   // Not actually deleted yet.
-  const stillThere = db.prepare('SELECT id FROM deals WHERE id = ?').get(deal.id);
+  const stillThere = await db.get('SELECT id FROM deals WHERE id = ?', [deal.id]);
   assert.ok(stillThere, 'deal should still exist until the pending event is approved');
 
-  const ev = db.prepare('SELECT status FROM events WHERE id = ?').get(result.eventId);
+  const ev = await db.get('SELECT status FROM events WHERE id = ?', [result.eventId]);
   assert.equal(ev.status, 'pending_approval');
 });
 
-test('dispatch() does NOT gate the same sensitive action for a human role (owner/admin/member)', () => {
-  const { tenantId, userId } = makeTenant();
-  const deal = dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Direct Delete' }).data;
+test('dispatch() does NOT gate the same sensitive action for a human role (owner/admin/member)', async () => {
+  const { tenantId, userId } = await makeTenant();
+  const deal = (await dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Direct Delete' })).data;
 
-  const result = dispatch({ tenantId, userId, role: 'owner' }, 'deal.deleted', { id: deal.id });
+  const result = await dispatch({ tenantId, userId, role: 'owner' }, 'deal.deleted', { id: deal.id });
   assert.equal(result.requiresApproval, false);
 
-  const gone = db.prepare('SELECT id FROM deals WHERE id = ?').get(deal.id);
+  const gone = await db.get('SELECT id FROM deals WHERE id = ?', [deal.id]);
   assert.equal(gone, undefined, 'owner-initiated delete should be immediate, no approval queue');
 });
 
-test('resolveEvent(): reject leaves the underlying data untouched', () => {
-  const { tenantId, userId } = makeTenant();
-  const deal = dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Reject Me' }).data;
-  const { eventId } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
+test('resolveEvent(): reject leaves the underlying data untouched', async () => {
+  const { tenantId, userId } = await makeTenant();
+  const deal = (await dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Reject Me' })).data;
+  const { eventId } = await dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
 
-  const outcome = resolveEvent(tenantId, eventId, false);
+  const outcome = await resolveEvent(tenantId, eventId, false);
   assert.equal(outcome.status, 'rejected');
 
-  const stillThere = db.prepare('SELECT id FROM deals WHERE id = ?').get(deal.id);
+  const stillThere = await db.get('SELECT id FROM deals WHERE id = ?', [deal.id]);
   assert.ok(stillThere, 'rejected delete must not touch the row');
 });
 
-test('resolveEvent(): approve applies the action exactly once', () => {
-  const { tenantId, userId } = makeTenant();
-  const deal = dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Approve Me' }).data;
-  const { eventId } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
+test('resolveEvent(): approve applies the action exactly once', async () => {
+  const { tenantId, userId } = await makeTenant();
+  const deal = (await dispatch({ tenantId, userId, role: 'owner' }, 'deal.created', { title: 'Approve Me' })).data;
+  const { eventId } = await dispatch({ tenantId, userId, role: 'agent' }, 'deal.deleted', { id: deal.id });
 
-  const outcome = resolveEvent(tenantId, eventId, true);
+  const outcome = await resolveEvent(tenantId, eventId, true);
   assert.equal(outcome.status, 'applied');
-  const gone = db.prepare('SELECT id FROM deals WHERE id = ?').get(deal.id);
+  const gone = await db.get('SELECT id FROM deals WHERE id = ?', [deal.id]);
   assert.equal(gone, undefined);
 
   // Re-resolving the same event must be a no-op, not a second delete attempt.
-  const second = resolveEvent(tenantId, eventId, true);
+  const second = await resolveEvent(tenantId, eventId, true);
   assert.equal(second.error, 'already_resolved');
   assert.equal(second.status, 'applied');
 });
 
-test('events are strictly tenant-scoped (no cross-tenant leakage)', () => {
-  const a = makeTenant();
-  const b = makeTenant();
-  dispatch({ tenantId: a.tenantId, userId: a.userId, role: 'owner' }, 'contact.created', { name: 'Only in A' });
-  dispatch({ tenantId: b.tenantId, userId: b.userId, role: 'owner' }, 'contact.created', { name: 'Only in B' });
+test('events are strictly tenant-scoped (no cross-tenant leakage)', async () => {
+  const a = await makeTenant();
+  const b = await makeTenant();
+  await dispatch({ tenantId: a.tenantId, userId: a.userId, role: 'owner' }, 'contact.created', { name: 'Only in A' });
+  await dispatch({ tenantId: b.tenantId, userId: b.userId, role: 'owner' }, 'contact.created', { name: 'Only in B' });
 
-  const aEvents = db.prepare('SELECT payload_json FROM events WHERE tenant_id = ?').all(a.tenantId);
-  const bEvents = db.prepare('SELECT payload_json FROM events WHERE tenant_id = ?').all(b.tenantId);
+  const aEvents = await db.all('SELECT payload_json FROM events WHERE tenant_id = ?', [a.tenantId]);
+  const bEvents = await db.all('SELECT payload_json FROM events WHERE tenant_id = ?', [b.tenantId]);
   assert.equal(aEvents.length, 1);
   assert.equal(bEvents.length, 1);
   assert.ok(aEvents[0].payload_json.includes('Only in A'));
   assert.ok(bEvents[0].payload_json.includes('Only in B'));
 
-  const aContacts = db.prepare('SELECT name FROM contacts WHERE tenant_id = ?').all(a.tenantId);
+  const aContacts = await db.all('SELECT name FROM contacts WHERE tenant_id = ?', [a.tenantId]);
   assert.deepEqual(aContacts.map(c => c.name), ['Only in A']);
 });
 
-test('dispatch() rejects an unknown event type', () => {
-  const { tenantId, userId } = makeTenant();
-  assert.throws(
+test('dispatch() rejects an unknown event type', async () => {
+  const { tenantId, userId } = await makeTenant();
+  await assert.rejects(
     () => dispatch({ tenantId, userId, role: 'owner' }, 'not.a.real.type', {}),
     /unknown_action/
   );
 });
 
-test('dispatch() rejects an unrecognized actor role instead of silently skipping approval', () => {
-  const { tenantId, userId } = makeTenant();
-  assert.throws(
+test('dispatch() rejects an unrecognized actor role instead of silently skipping approval', async () => {
+  const { tenantId, userId } = await makeTenant();
+  await assert.rejects(
     () => dispatch({ tenantId, userId, role: 'totally_made_up' }, 'deal.deleted', { id: 'whatever' }),
     /unknown_actor_role/
   );

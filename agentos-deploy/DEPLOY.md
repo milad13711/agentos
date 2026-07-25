@@ -96,13 +96,26 @@ docker compose up -d --build backend
 وارد `/billing` بشو، روی یکی از دکمه‌های ارتقا بزن — باید به صفحه پرداخت زرین‌پال (Sandbox) هدایت بشی.
 
 
-`schema-postgres.sql` آماده‌ست ولی هنوز به اپلیکیشن وصل نیست، چون این یک تغییر واقعاً پرریسکه که باید جدا و با تست انجام بشه:
+## مهاجرت PostgreSQL (وایر شده و تست شده — فقط وقتی لازمش داری فعالش کن)
 
-1. `npm install pg` در `agentos-backend`
-2. در `src/db.js`: جایگزینی `new DatabaseSync(...)` با `new Pool({connectionString: process.env.DATABASE_URL})`
-3. **تبدیل هر `db.prepare(sql).get/all/run(params)` به `await pool.query(sql, params)`** — این تنها قسمت واقعاً زمان‌بره، چون SQLite همزمان (sync) کار می‌کنه ولی `pg` ناهمزمان (async) — یعنی هر Route Handler که از `db` استفاده می‌کنه باید `async/await` بشه (اکثرشون از قبل async هستن، پس تغییر کمتر از چیزیه که فکر می‌کنی، ولی باید یکی‌یکی تست بشه)
-4. Placeholder syntax فرق می‌کنه: SQLite از `?` استفاده می‌کنه، PostgreSQL از `$1, $2, ...` — این تبدیل باید در همه Query ها انجام بشه
-5. برای هر درخواست، قبل از هر Query تنظیم کن: `SET LOCAL app.current_tenant_id = '<tenantId>'` تا RLS کار کنه
-6. Migration داده موجود: یک اسکریپت one-off بنویس که از SQLite بخونه و به Postgres بنویسه (چون فرمت داده یکسانه، این ساده‌ست)
+✅ **دیگه فقط طرح نیست** — `src/db.js` الان واقعاً از هر دو backend پشتیبانی می‌کنه (SQLite پیش‌فرض، PostgreSQL وقتی `DATABASE_URL` ست بشه)، با یک API یکسان (`db.get/all/run/exec`, همه async) که همه‌جای کد (`actions.js`, `agent.js`, `billing.js`, `server.js`) ازش استفاده می‌کنن — دیگه هیچ‌جا مستقیم SQL backend-specific نداریم. این رو با یک PostgreSQL 16 واقعی (نه شبیه‌سازی) تست کردم: کل تست‌suite بک‌اند (۱۳ تست) هم روی SQLite هم روی Postgres سبز می‌شه، و یک اجرای دستی end-to-end (ثبت‌نام، ساخت مخاطب/معامله/ماژول/رکورد، Marketplace، چت Agent، گزارش CSV) هم روی Postgres واقعی چک شد.
 
-**توصیه من:** این مهاجرت رو در یک محیط با دسترسی واقعی به Postgres و امکان تست کامل انجام بده (مثلاً با Claude Code روی سیستم خودت، جایی که می‌تونی واقعاً `docker compose up` بزنی و هر تغییر رو تست کنی) — نه این‌که من اینجا کورکورانه ۷۰۰+ خط کد رو بدون امکان اجرا تغییر بدم و برات بفرستم. با SQLite فعلی، تا وقتی روی یک سرور تنها (نه چند Instance موازی) اجرا می‌کنی، کاملاً قابل‌اعتماده — خیلی از محصولات واقعی SaaS با SQLite در Production کار می‌کنن.
+دو باگ واقعی که فقط با تست روی Postgres واقعی پیدا می‌شدن (نه با خوندن کد):
+- ستون‌های JSON (`fields_json`, `values_json`, `features_json`, `payload_json`) اگه `JSONB` باشن، درایور `pg` خودکار parse‌شون می‌کنه به Object — ولی کد همه‌جا `JSON.parse(row.fields_json)` صدا می‌زنه چون SQLite این‌ها رو به‌صورت TEXT خام برمی‌گردونه. راه‌حل: این ستون‌ها تو schema پستگرس هم `TEXT` نگه داشته شدن (نه JSONB) تا رفتار دو backend دقیقاً یکی باشه.
+- ستون‌های `BIGINT` (تایم‌استمپ‌های `Date.now()`) از `pg` به‌صورت string برمی‌گردن (چون BIGINT می‌تونه از safe-integer جاوااسکریپت رد بشه) — ولی SQLite و کل فرانت (مثلاً `new Date(row.created_at)`) عدد می‌خوان. راه‌حل: `pg.types.setTypeParser(20, ...)` تو `db.js` این‌ها رو به Number تبدیل می‌کنه (امن، چون تایم‌استمپ‌های ما میلی‌ثانیه‌ای هستن، خیلی کمتر از سقف safe-integer).
+
+### فعال‌سازی (فقط وقتی واقعاً به چند Instance نیاز داری)
+
+۱. تو `docker-compose.yml`، سرویس `postgres` (کامنت‌شده، پایین فایل) رو از کامنت دربیار، و `backend.depends_on: [postgres]` رو هم.
+۲. تو `.env`: `POSTGRES_PASSWORD` و `DATABASE_URL=postgres://agentos:<همون پسورد>@postgres:5432/agentos` رو ست کن.
+۳. `docker compose up -d --build` — `src/db.js` خودش جدول‌ها رو می‌سازه (idempotent، هر بار boot دوباره امن اجرا می‌شه).
+۴. اگه داده واقعی تو SQLite قبلی داری، یک‌بار مهاجرتش کن:
+   ```bash
+   docker compose exec backend sh -c "AGENTOS_DB_PATH=/app/data/agentos.sqlite DATABASE_URL=\$DATABASE_URL node scripts/migrate-sqlite-to-postgres.js"
+   ```
+   این اسکریپت **مخرب روی مقصده** (جدول‌های Postgres رو قبل از کپی خالی می‌کنه) — فقط رو یک دیتابیس Postgres تازه/تست‌شده اجراش کن، نه رو چیزی که همین الان ترافیک زنده داره.
+۵. تست کن (لاگین، ساخت مخاطب/معامله، چک `docker compose logs backend` که خطای اتصال نده).
+
+### Row-Level Security — هنوز وایر نشده (عمداً)
+
+`schema-postgres.sql` علاوه بر جدول‌ها، Policy های RLS هم مستند می‌کنه (دفاع لایه‌ی دیتابیس در برابر باگ‌های فراموش‌کردن `WHERE tenant_id = ?`). اون Policy ها **در کد فعلی وایر نشدن** — فعال‌کردنشون بدون تغییر اپلیکیشن، اپ رو می‌شکنه (مثلاً لاگین با ایمیل ذاتاً باید cross-tenant باشه قبل از اینکه tenant مشخص بشه، ولی RLS پیش‌فرض همه‌چی رو تا وقتی `SET LOCAL app.current_tenant_id` ست نشده رد می‌کنه). فعال‌سازی واقعی RLS نیاز داره هر درخواست HTTP یک اتصال اختصاصی از pool بگیره (نه query تصادفی روی هر کانکشن آزاد pool)، این متغیر session رو موقع شروع درخواست ست کنه، و مسیرهای قبل از احراز هویت (لاگین/ثبت‌نام) رو جدا طراحی کنه. این یک تغییر معماری جداست، نه بخشی از این مهاجرت — تا وقتی لازمش نشده، ایزوله‌بودن Tenant همون‌جوری که الان هست (فیلتر صریح `tenant_id` تو هر Query، تست‌شده در `agentos-backend/test/`) کاملاً کافیه.

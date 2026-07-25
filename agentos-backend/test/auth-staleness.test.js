@@ -18,12 +18,15 @@ process.env.AGENTOS_DB_PATH = dbPath;
 process.env.AGENTOS_TOKEN_SECRET = 'test-secret';
 
 const server = require('../src/server');
-const { db } = require('../src/db');
+const { db, ready } = require('../src/db');
 
 let baseUrl;
-test.before(() => new Promise((resolve) => {
-  server.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
-}));
+test.before(async () => {
+  await ready;
+  await new Promise((resolve) => {
+    server.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
+  });
+});
 test.after(() => {
   server.close();
   try { fs.unlinkSync(dbPath); } catch { /* ignore */ }
@@ -55,7 +58,7 @@ test('a role change applies immediately to a token issued before the change', as
   });
   const ownerToken = owner.body.token;
 
-  db.prepare(`UPDATE plans SET seats_limit = 20 WHERE key = 'free'`).run();
+  await db.run(`UPDATE plans SET seats_limit = 20 WHERE key = 'free'`);
 
   const invite = await request('POST', '/api/team/invite', {
     token: ownerToken,
@@ -84,7 +87,7 @@ test('removing a team member revokes their already-issued token on the next requ
     body: { tenantName: 'Revoke Co', name: 'Owner', email: `owner2-${Date.now()}@test.local`, password: 'password123' },
   });
   const ownerToken = owner.body.token;
-  db.prepare(`UPDATE plans SET seats_limit = 20 WHERE key = 'free'`).run();
+  await db.run(`UPDATE plans SET seats_limit = 20 WHERE key = 'free'`);
 
   const invite = await request('POST', '/api/team/invite', {
     token: ownerToken,

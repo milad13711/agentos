@@ -1,18 +1,15 @@
-# AgentOS Backend — zero npm dependencies (pure Node core + node:sqlite),
-# so this image is intentionally minimal: no npm install step needed.
+# AgentOS Backend — mostly pure Node core (node:http, node:sqlite,
+# node:crypto); the one real dependency is `pg`, used only when DATABASE_URL
+# is set to switch src/db.js over to PostgreSQL (see agentos-deploy/DEPLOY.md).
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Nothing to install — package.json has no "dependencies". If you later add
-# real deps (e.g. migrating to `pg`), add:
-#   COPY package.json .
-#   RUN npm install --omit=dev
-# before the COPY below.
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev
 
 COPY src ./src
 COPY scripts ./scripts
-COPY package.json .
 
 # Persistent SQLite file lives here — mount a volume at /app/data in
 # docker-compose so data survives container restarts/rebuilds.

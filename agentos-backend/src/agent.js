@@ -59,20 +59,20 @@ const DOMAIN_OF = {
   none: 'none'
 };
 
-function dataSnapshot(tenantId) {
-  const contactCount = db.prepare('SELECT COUNT(*) c FROM contacts WHERE tenant_id = ?').get(tenantId).c;
-  const dealCount = db.prepare('SELECT COUNT(*) c FROM deals WHERE tenant_id = ?').get(tenantId).c;
-  const recentDeals = db.prepare('SELECT title, contact_name, amount, stage FROM deals WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 10').all(tenantId);
-  const recentContacts = db.prepare('SELECT name, phone, company FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 10').all(tenantId);
-  const modules = db.prepare('SELECT id, name, fields_json FROM custom_modules WHERE tenant_id = ?').all(tenantId);
-  const marketItems = db.prepare('SELECT name, fields_json, published_by_tenant FROM marketplace_modules WHERE enabled = 1').all();
-  const teamMembers = db.prepare(`SELECT name FROM users WHERE tenant_id = ? AND status = 'active'`).all(tenantId);
+async function dataSnapshot(tenantId) {
+  const contactCount = (await db.get('SELECT COUNT(*) c FROM contacts WHERE tenant_id = ?', [tenantId])).c;
+  const dealCount = (await db.get('SELECT COUNT(*) c FROM deals WHERE tenant_id = ?', [tenantId])).c;
+  const recentDeals = await db.all('SELECT title, contact_name, amount, stage FROM deals WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 10', [tenantId]);
+  const recentContacts = await db.all('SELECT name, phone, company FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 10', [tenantId]);
+  const modules = await db.all('SELECT id, name, fields_json FROM custom_modules WHERE tenant_id = ?', [tenantId]);
+  const marketItems = await db.all('SELECT name, fields_json, published_by_tenant FROM marketplace_modules WHERE enabled = TRUE');
+  const teamMembers = await db.all(`SELECT name FROM users WHERE tenant_id = ? AND status = 'active'`, [tenantId]);
 
   const modulesDesc = modules.length
-    ? modules.map(m => {
+    ? (await Promise.all(modules.map(async m => {
         const fields = JSON.parse(m.fields_json);
-        const records = db.prepare('SELECT values_json FROM module_records WHERE module_id = ? ORDER BY created_at DESC LIMIT 8').all(m.id);
-        const recordCount = db.prepare('SELECT COUNT(*) c FROM module_records WHERE module_id = ?').get(m.id).c;
+        const records = await db.all('SELECT values_json FROM module_records WHERE module_id = ? ORDER BY created_at DESC LIMIT 8', [m.id]);
+        const recordCount = (await db.get('SELECT COUNT(*) c FROM module_records WHERE module_id = ?', [m.id])).c;
         const recordsDesc = records.length
           ? records.map(r => {
               const v = JSON.parse(r.values_json || '{}');
@@ -80,7 +80,7 @@ function dataSnapshot(tenantId) {
             }).join(' | ')
           : 'هیچ رکوردی ثبت نشده';
         return `«${m.name}» (فیلدها: ${fields.map(f => f.key).join('، ')}) — ${recordCount} رکورد ثبت‌شده — رکوردهای اخیر: ${recordsDesc}`;
-      }).join('\n  ')
+      }))).join('\n  ')
     : 'هیچ ماژول محلی وجود ندارد';
   const marketDesc = marketItems.length
     ? marketItems.map(m => `«${m.name}» (منتشرشده توسط ${m.published_by_tenant})`).join(' | ')
@@ -104,7 +104,7 @@ function dataSnapshot(tenantId) {
 اعضای تیم (برای ارجاع وظیفه): ${teamDesc}`;
 }
 
-function buildSystemPrompt(tenantId, agentName, agentPersona) {
+async function buildSystemPrompt(tenantId, agentName, agentPersona) {
   const personaLine = agentPersona
     ? `نام تو «${agentName}» است و باید با این شخصیت پاسخ بدی: ${agentPersona}`
     : `نام تو «${agentName}» است.`;
@@ -112,7 +112,7 @@ function buildSystemPrompt(tenantId, agentName, agentPersona) {
 تو Orchestrator Agent در سیستم AgentOS هستی و درخواست فارسی کاربر را به یک اکشن ساختاریافته تبدیل می‌کنی.
 
 وضعیت فعلی داده این Tenant:
-${dataSnapshot(tenantId)}
+${await dataSnapshot(tenantId)}
 
 اکشن‌های مجاز (هرکدام domain مشخصی دارد: sales | finance | builder | team | reports | none):
 - create_contact {name, phone?, company?}
@@ -338,10 +338,10 @@ function devMockParse(text) {
 // findDeal/findContact/findModule/findMarketItem/findTeamMember now live in
 // actions.js (single source, shared with the REST dispatch path). Only the
 // fuzzy-lookup helpers actions.js doesn't need yet stay here.
-function findTaskByTitle(tenantId, title) {
+async function findTaskByTitle(tenantId, title) {
   if (!title) return null;
-  return db.prepare(`SELECT * FROM tasks WHERE tenant_id = ? AND title LIKE ? ORDER BY created_at DESC LIMIT 1`)
-    .get(tenantId, `%${title}%`);
+  return db.get(`SELECT * FROM tasks WHERE tenant_id = ? AND title LIKE ? ORDER BY created_at DESC LIMIT 1`,
+    [tenantId, `%${title}%`]);
 }
 
 // General-purpose audit trail, now backed by `events` (single source of
@@ -351,67 +351,67 @@ function findTaskByTitle(tenantId, title) {
 // inside dispatch()/resolveEvent(); callers there should NOT also call
 // audit() for the same fact — that would just re-create the audit_logs
 // dual-write problem this migration exists to remove.
-function audit(tenantId, actorType, actorId, action, entity, detail) {
+async function audit(tenantId, actorType, actorId, action, entity, detail) {
   const [entityType, entityId] = entity ? entity.split(':') : [null, null];
-  db.prepare(`INSERT INTO events (id, tenant_id, type, actor_type, actor_id, actor_role, entity_type, entity_id, payload_json, status, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)`)
-    .run(uid(), tenantId, action, actorType, actorId || null, actorType, entityType || null, entityId || null, JSON.stringify(detail || {}), now());
+  await db.run(`INSERT INTO events (id, tenant_id, type, actor_type, actor_id, actor_role, entity_type, entity_id, payload_json, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)`,
+    [uid(), tenantId, action, actorType, actorId || null, actorType, entityType || null, entityId || null, JSON.stringify(detail || {}), now()]);
 }
 
 // Executes a NON-sensitive or an approved action against the real DB.
 // Returns { result } describing what happened, for the API response.
-function executeAction(tenantId, userId, action, params) {
+async function executeAction(tenantId, userId, action, params) {
   const t = now();
   switch (action) {
     case 'create_contact': {
-      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', params);
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'contact.created', params);
       return { type: 'contact', data };
     }
     case 'create_deal': {
-      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.created', params);
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'deal.created', params);
       return { type: 'deal', data };
     }
     case 'update_deal_stage': {
-      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'deal.stage_changed', params);
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'deal.stage_changed', params);
       if (!data) return null;
       return { type: 'deal', data };
     }
     case 'list_invoices':
-      return { type: 'invoices_table', data: db.prepare('SELECT * FROM invoices WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId) };
+      return { type: 'invoices_table', data: await db.all('SELECT * FROM invoices WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]) };
     // delete_deal, delete_contact, issue_invoice, build_module, delete_module
     // are sensitive — they never reach executeAction() directly. act() sends
     // them through dispatch() (queues a pending_approval event); resolvePending()
     // applies them via resolveEvent() once approved. See SENSITIVE_ACTION_TYPE below.
     case 'module_create_record': {
-      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'module.record_created', params);
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'module.record_created', params);
       if (!data) return null;
       return { type: 'module_record', data };
     }
     case 'module_list_records': {
-      const mod = findModule(tenantId, null, params.moduleName);
+      const mod = await findModule(tenantId, null, params.moduleName);
       if (!mod) return null;
-      const records = db.prepare('SELECT * FROM module_records WHERE module_id = ? ORDER BY created_at DESC').all(mod.id);
+      const records = await db.all('SELECT * FROM module_records WHERE module_id = ? ORDER BY created_at DESC', [mod.id]);
       return { type: 'module_records_table', data: { module: mod, records } };
     }
     case 'list_marketplace':
-      return { type: 'marketplace_table', data: db.prepare('SELECT * FROM marketplace_modules WHERE enabled = 1 ORDER BY created_at DESC').all() };
+      return { type: 'marketplace_table', data: await db.all('SELECT * FROM marketplace_modules WHERE enabled = TRUE ORDER BY created_at DESC') };
     case 'create_task': {
-      const { data } = dispatch({ tenantId, userId, role: 'agent' }, 'task.created', params);
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'task.created', params);
       return { type: 'task', data };
     }
     case 'list_tasks': {
-      const rows = db.prepare(`
+      const rows = await db.all(`
         SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id
-        WHERE t.tenant_id = ? AND t.status = 'open' ORDER BY (t.due_at IS NULL), t.due_at ASC LIMIT 20`).all(tenantId);
+        WHERE t.tenant_id = ? AND t.status = 'open' ORDER BY (t.due_at IS NULL), t.due_at ASC LIMIT 20`, [tenantId]);
       return { type: 'tasks_table', data: rows };
     }
     case 'delegate_task': {
-      const task = findTaskByTitle(tenantId, params.taskTitle);
-      const assignee = findTeamMember(tenantId, null, params.assigneeName);
+      const task = await findTaskByTitle(tenantId, params.taskTitle);
+      const assignee = await findTeamMember(tenantId, null, params.assigneeName);
       if (!task || !assignee) return null;
-      db.prepare('UPDATE tasks SET assignee_id = ?, updated_at = ? WHERE id = ?').run(assignee.id, t, task.id);
-      audit(tenantId, 'agent', userId, 'delegate_task', 'task:' + task.id, params);
-      const row = db.prepare('SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?').get(task.id);
+      await db.run('UPDATE tasks SET assignee_id = ?, updated_at = ? WHERE id = ?', [assignee.id, t, task.id]);
+      await audit(tenantId, 'agent', userId, 'delegate_task', 'task:' + task.id, params);
+      const row = await db.get('SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?', [task.id]);
       return { type: 'task', data: row };
     }
     case 'generate_report': {
@@ -419,32 +419,32 @@ function executeAction(tenantId, userId, action, params) {
       let columns, rows;
       if (type === 'contacts') {
         columns = ['name', 'phone', 'company'];
-        rows = db.prepare('SELECT name, phone, company FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId);
+        rows = await db.all('SELECT name, phone, company FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]);
       } else if (type === 'deals') {
         columns = ['title', 'contact_name', 'amount', 'stage'];
-        rows = db.prepare('SELECT title, contact_name, amount, stage FROM deals WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId);
+        rows = await db.all('SELECT title, contact_name, amount, stage FROM deals WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]);
       } else if (type === 'invoices') {
         columns = ['deal_title', 'amount'];
-        rows = db.prepare('SELECT deal_title, amount FROM invoices WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId);
+        rows = await db.all('SELECT deal_title, amount FROM invoices WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]);
       } else {
         columns = ['title', 'assignee_name', 'status', 'due_at'];
-        rows = db.prepare('SELECT t.title, u.name as assignee_name, t.status, t.due_at FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.tenant_id = ? ORDER BY t.created_at DESC').all(tenantId);
+        rows = await db.all('SELECT t.title, u.name as assignee_name, t.status, t.due_at FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.tenant_id = ? ORDER BY t.created_at DESC', [tenantId]);
       }
-      audit(tenantId, 'agent', userId, 'generate_report', 'report:' + type, { reportType: type });
+      await audit(tenantId, 'agent', userId, 'generate_report', 'report:' + type, { reportType: type });
       return { type: 'report_data', data: { reportType: type, columns, rows } };
     }
     case 'list_contacts':
-      return { type: 'contacts_table', data: db.prepare('SELECT * FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId) };
+      return { type: 'contacts_table', data: await db.all('SELECT * FROM contacts WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]) };
     case 'list_deals': {
       const rows = params.stage && STAGES.includes(params.stage)
-        ? db.prepare('SELECT * FROM deals WHERE tenant_id = ? AND stage = ? ORDER BY created_at DESC').all(tenantId, params.stage)
-        : db.prepare('SELECT * FROM deals WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId);
+        ? await db.all('SELECT * FROM deals WHERE tenant_id = ? AND stage = ? ORDER BY created_at DESC', [tenantId, params.stage])
+        : await db.all('SELECT * FROM deals WHERE tenant_id = ? ORDER BY created_at DESC', [tenantId]);
       return { type: 'deals_table', data: rows };
     }
     case 'report': {
-      const openDeals = db.prepare(`SELECT COUNT(*) c, COALESCE(SUM(amount),0) v FROM deals WHERE tenant_id = ? AND stage NOT IN ('برنده','ازدست‌رفته')`).get(tenantId);
-      const won = db.prepare(`SELECT COALESCE(SUM(amount),0) v FROM deals WHERE tenant_id = ? AND stage = 'برنده'`).get(tenantId);
-      const contactCount = db.prepare('SELECT COUNT(*) c FROM contacts WHERE tenant_id = ?').get(tenantId).c;
+      const openDeals = await db.get(`SELECT COUNT(*) c, COALESCE(SUM(amount),0) v FROM deals WHERE tenant_id = ? AND stage NOT IN ('برنده','ازدست‌رفته')`, [tenantId]);
+      const won = await db.get(`SELECT COALESCE(SUM(amount),0) v FROM deals WHERE tenant_id = ? AND stage = 'برنده'`, [tenantId]);
+      const contactCount = (await db.get('SELECT COUNT(*) c FROM contacts WHERE tenant_id = ?', [tenantId])).c;
       return { type: 'report', data: { totalContacts: contactCount, openDeals: openDeals.c, pipelineValue: openDeals.v, wonValue: won.v } };
     }
     default:
@@ -454,10 +454,10 @@ function executeAction(tenantId, userId, action, params) {
 
 // Main entrypoint used by the API layer.
 async function act(tenantId, userId, text, history) {
-  const user = db.prepare('SELECT agent_name, agent_persona FROM users WHERE id = ?').get(userId);
+  const user = await db.get('SELECT agent_name, agent_persona FROM users WHERE id = ?', [userId]);
   const agentName = (user && user.agent_name) || 'Agent';
   const agentPersona = (user && user.agent_persona) || '';
-  const systemPrompt = buildSystemPrompt(tenantId, agentName, agentPersona);
+  const systemPrompt = await buildSystemPrompt(tenantId, agentName, agentPersona);
   const parsed = await callAI(systemPrompt, text, history);
   const action = parsed.action || 'none';
   const domain = DOMAIN_OF[action] || 'none';
@@ -468,7 +468,7 @@ async function act(tenantId, userId, text, history) {
     // Code-level dedup guard for build_module: don't rely solely on the model
     // following prompt instructions to avoid duplicates — enforce it here.
     if (action === 'build_module' && params.moduleName) {
-      const existing = findModule(tenantId, null, params.moduleName);
+      const existing = await findModule(tenantId, null, params.moduleName);
       if (existing) {
         return {
           requiresApproval: false, action, domain,
@@ -478,31 +478,31 @@ async function act(tenantId, userId, text, history) {
       }
     }
     const type = SENSITIVE_ACTION_TYPE[action];
-    const { eventId } = dispatch({ tenantId, userId, role: 'agent' }, type, params);
+    const { eventId } = await dispatch({ tenantId, userId, role: 'agent' }, type, params);
     return { requiresApproval: true, pendingId: eventId, action, domain, params, reply };
   }
 
-  const result = executeAction(tenantId, userId, action, params);
+  const result = await executeAction(tenantId, userId, action, params);
   return { requiresApproval: false, action, domain, params, reply, result };
 }
 
 // pendingId is an events.id (see actions.js — dispatch() queues sensitive
 // actions there as status='pending_approval' instead of the old
 // pending_actions table).
-function resolvePending(tenantId, userId, pendingId, approve) {
-  const ev = db.prepare('SELECT * FROM events WHERE id = ? AND tenant_id = ?').get(pendingId, tenantId);
+async function resolvePending(tenantId, userId, pendingId, approve) {
+  const ev = await db.get('SELECT * FROM events WHERE id = ? AND tenant_id = ?', [pendingId, tenantId]);
   if (!ev) return { error: 'not_found' };
   if (ev.status !== 'pending_approval') return { error: 'already_resolved', status: ev.status };
   const params = JSON.parse(ev.payload_json);
 
   if (!approve) {
-    resolveEvent(tenantId, pendingId, false);
-    audit(tenantId, 'user', userId, 'reject_pending_action', ev.type, params);
+    await resolveEvent(tenantId, pendingId, false);
+    await audit(tenantId, 'user', userId, 'reject_pending_action', ev.type, params);
     return { status: 'rejected' };
   }
 
-  const outcome = resolveEvent(tenantId, pendingId, true);
-  audit(tenantId, 'user', userId, 'approve_pending_action', ev.type, params);
+  const outcome = await resolveEvent(tenantId, pendingId, true);
+  await audit(tenantId, 'user', userId, 'approve_pending_action', ev.type, params);
   return { status: outcome.status, result: toLegacyResult(ev.type, outcome.data) };
 }
 

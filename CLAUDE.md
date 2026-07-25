@@ -7,9 +7,9 @@
 ## معماری کلی
 
 ```
-agentos-backend/   → Node.js خالص (بدون dependency!) — node:http + node:sqlite + node:crypto
+agentos-backend/   → عمدتاً Node.js خالص — node:http + node:crypto + (SQLite پیش‌فرض با node:sqlite، یا PostgreSQL واقعی وقتی DATABASE_URL ست بشه، با تنها dependency واقعی: `pg`)
 agentos-web/        → Next.js 14 App Router — BFF pattern، توکن AgentOS فقط سمت سرور، httpOnly cookie
-agentos-deploy/     → docker-compose.yml + Caddyfile + schema-postgres.sql (مرجع، هنوز وایر نشده) + DEPLOY.md
+agentos-deploy/     → docker-compose.yml + Caddyfile + schema-postgres.sql (وایر شده، پایین رو ببین) + DEPLOY.md
 frontend-local/     → (داخل agentos-backend) دو HTML مستقل بدون build، برای تست سریع بدون Next.js
 ```
 
@@ -56,6 +56,10 @@ rm -rf agentos-backend/data
 12. تاریخچه‌ی چت (`ChatPanel.tsx`) تو `localStorage` مرورگر ذخیره می‌شه، با کلید per-user (`agentos_chat_messages:<userId>`) — قبلاً یک کلید ثابت بود که باعث می‌شد چت یک حساب تو حساب بعدی (روی همون مرورگر) دیده بشه. اگه فیچر مشابهی اضافه کردی، همیشه کلید `localStorage` رو namespace کن.
 13. `docker compose up -d --build` کانتینر `caddy` رو ری‌استارت **نمی‌کنه** فقط چون محتوای `Caddyfile` (که volume-mount شده) عوض شده — Compose فقط وقتی سرویسی رو recreate می‌کنه که تعریف خودِ سرویس (image/env/...) عوض بشه. بعد از هر تغییر تو `Caddyfile`، صریحاً `docker compose restart caddy` بزن، وگرنه کانفیگ قدیمی تو حافظه می‌مونه (این دقیقاً چیزیه که موقع فعال‌سازی HTTPS واقعی گیر کردیم).
 14. تو `agentos-web`، هیچ‌جا فقط `overflow-y-auto` تنها نذار — طبق اسپک CSS، اگه overflow-x رو صریح ست نکنی، مرورگر خودش overflow-x رو هم `auto` می‌کنه (نه `hidden`)، یعنی همون کانتینر می‌تونه جدا اسکرول افقی بگیره. این با موس رو دسکتاپ اصلاً حس نمی‌شه ولی رو گوشی با لمس خیلی اذیت‌کننده‌ست. همیشه `overflow-y-auto overflow-x-hidden` با هم بنویس (همه‌ی صفحات `(app)` الان همینطورن).
+15. `src/db.js` الان دو تا backend داره پشت یک API یکسان (`db.get/all/run/exec`, همه async، placeholder همیشه `?`) — هرگز مستقیم `db.prepare(...)` یا SQL مخصوص یک backend ننویس. دو گیر واقعی که فقط با Postgres واقعی (نه فقط خوندن کد) کشف شدن:
+    - ستون‌های JSON (`fields_json`, `values_json`, `features_json`, `payload_json`) عمداً `TEXT` نگه داشته شدن، نه `JSONB` — چون `pg` ستون‌های JSONB رو خودکار به Object پارس می‌کنه، ولی همه‌جای کد `JSON.parse(row.xxx_json)` صدا می‌زنه (چون SQLite همیشه TEXT خام برمی‌گردونه). اگه یه ستون JSON جدید اضافه کردی، تو schema پستگرس هم `TEXT` بذار، نه `JSONB`.
+    - ستون‌های `BIGINT` (تایم‌استمپ میلی‌ثانیه‌ای) از `pg` به‌صورت **string** برمی‌گردن، نه Number — `db.js` با `pg.types.setTypeParser(20, ...)` این رو به Number تبدیل می‌کنه (چون فرانت جاهایی مثل `new Date(row.created_at)` عدد می‌خواد، و روی string غیر-ISO نتیجه `Invalid Date` می‌ده). اگه یه ستون BIGINT جدید اضافه کردی، همین رفتار خودکار شامل حالش می‌شه؛ فقط یادت باشه چرا اون خط تو db.js هست.
+    - همچنین: مقایسه‌ی لفظی ستون‌های Boolean-مانند (`enabled`, `is_active`, `is_super_admin`) تو SQL همیشه با `= TRUE`/`= FALSE` بنویس، نه `= 1`/`= 0` — تو Postgres این ستون‌ها واقعاً `BOOLEAN`ن و `col = 1` خطای type می‌ده (ولی پارامتر bind‌شده با مقدار JS عدد ۰/۱ مشکلی نداره، چون Postgres رشته‌ی `'0'`/`'1'` رو boolean معتبر می‌دونه — فقط literal تو خودِ متن SQL مشکل‌سازه).
 
 ## پلن‌ها
 
@@ -68,7 +72,7 @@ Free (۰) → Starter (۹۹۰هزار/ماه) → Pro (۲.۹۹۹میلیون/م�
 2. ✅ ~~HTTPS واقعی~~ — DNS جا افتاد، Caddy گواهی Let's Encrypt گرفت، `ALLOW_INSECURE_COOKIE` حذف شد
 3. ✅ ~~راه‌اندازی CI/CD ساده~~ — `.github/workflows/deploy.yml` (build gate + دیپلوی خودکار SSH). راهنمای setup در `docs/ci-cd-setup.md`
 4. ✅ ~~Marketplace UI در Next.js~~ — صفحه `/marketplace` اضافه شد (انتشار ماژول خودت + نصب از کاتالوگ مشترک)، بک‌اندش از قبل آماده بود
-5. مهاجرت PostgreSQL (فقط وقتی واقعاً به چند Instance نیاز شد — `schema-postgres.sql` آماده‌ست ولی وایر نشده؛ چک‌لیست کامل در `agentos-deploy/DEPLOY.md`)
+5. ✅ ~~مهاجرت PostgreSQL~~ — `src/db.js` الان از هر دو backend پشتیبانی می‌کنه (SQLite پیش‌فرض، Postgres وقتی `DATABASE_URL` ست بشه)، با یک PostgreSQL 16 واقعی تست شد (نه شبیه‌سازی) — کل تست‌suite بک‌اند + یک اجرای دستی end-to-end. جزئیات، دو باگ واقعی که فقط با تست روی Postgres واقعی پیدا شدن (JSONB auto-parse، BIGINT-as-string)، و راهنمای فعال‌سازی در `agentos-deploy/DEPLOY.md`. **هنوز واقعاً روی SQLite در production هستیم** — این کار فقط زیرساخت رو آماده کرد؛ فعال‌سازی واقعی Postgres روی سرور یک تصمیم جداست (وقتی واقعاً به چند Instance نیاز شد). RLS (`schema-postgres.sql`) هم مستنده ولی عمداً هنوز وایر نشده — به همون فایل مراجعه کن.
 6. Zarinpal واقعی — **عمداً به تعویق افتاد**: دامنه فعلی (`exirsms.ir`) فقط تستیه، برای پروژه نهایی نیست؛ گرفتن Merchant ID روی این دامنه بعداً موقع مهاجرت به دامنه اصلی دردسر می‌سازه. وقتی دامنه نهایی مشخص شد، اول اون رو ست کن، بعد Zarinpal.
 7. ✅ ~~تأخیر ۱۲ساعته‌ی اعمال تغییر نقش/دسترسی~~ — بدون نیاز به زیرساخت کامل Refresh Token: `requireAuth()`/`requireSuperAdmin()` تو `server.js` الان `role` و `is_super_admin` رو هم (مثل `status`) هر بار مستقیم از DB می‌خونن، نه از claim توکن. یعنی تغییر نقش یا ارتقا/تنزل super-admin از همون درخواست بعدی روی توکن قبلاً صادرشده اعمال می‌شه، بدون re-login. جزئیات در «کارهای اضافه‌ای» پایین. (Refresh Token/Revocation List واقعی هنوز نیست — اگه یه‌جا نیاز به logout فوری همه‌ی نشست‌های یک کاربر یا invalidate کردن یک توکن مشخص قبل از expire شدنش پیش اومد، هنوز باید اضافه بشه؛ ولی گپ اصلی که تو این پروژه شناسایی شده بود بسته شد.)
 

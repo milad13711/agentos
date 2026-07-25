@@ -13,30 +13,33 @@
 //     (e.g. compare row counts, spot-check a few entries) — see the
 //     checklist in docs/phase1-event-schema-agent-roles.md before running
 //     this against the production database.
-const { db, uid, now } = require('../src/db');
+const { db, ready } = require('../src/db');
 
-function backfill() {
-  const rows = db.prepare('SELECT * FROM audit_logs').all();
-  const insert = db.prepare(`INSERT OR IGNORE INTO events
-    (id, tenant_id, type, actor_type, actor_id, actor_role, entity_type, entity_id, payload_json, status, created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+async function backfill() {
+  const rows = await db.all('SELECT * FROM audit_logs');
   let inserted = 0;
   for (const row of rows) {
     const [entityType, entityId] = row.entity ? row.entity.split(':') : [null, null];
-    const result = insert.run(
-      row.id, row.tenant_id, row.action, row.actor_type, row.actor_id, row.actor_type,
-      entityType || null, entityId || null, row.detail_json || '{}', 'executed', row.created_at
-    );
-    if (result.changes) inserted++;
+    const existing = await db.get('SELECT id FROM events WHERE id = ?', [row.id]);
+    if (existing) continue;
+    await db.run(`INSERT INTO events
+      (id, tenant_id, type, actor_type, actor_id, actor_role, entity_type, entity_id, payload_json, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.tenant_id, row.action, row.actor_type, row.actor_id, row.actor_type,
+        entityType || null, entityId || null, row.detail_json || '{}', 'executed', row.created_at]);
+    inserted++;
   }
   console.log(`audit_logs rows: ${rows.length}, newly inserted into events: ${inserted}`);
 }
 
-function dropLegacyTables() {
-  db.exec('DROP TABLE IF EXISTS audit_logs;');
-  db.exec('DROP TABLE IF EXISTS pending_actions;');
+async function dropLegacyTables() {
+  await db.exec('DROP TABLE IF EXISTS audit_logs;');
+  await db.exec('DROP TABLE IF EXISTS pending_actions;');
   console.log('Dropped audit_logs and pending_actions.');
 }
 
-backfill();
-if (process.argv.includes('--drop-legacy-tables')) dropLegacyTables();
+(async () => {
+  await ready;
+  await backfill();
+  if (process.argv.includes('--drop-legacy-tables')) await dropLegacyTables();
+})();
