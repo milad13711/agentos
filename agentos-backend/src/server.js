@@ -62,14 +62,22 @@ function requireAuth(req, res) {
   // "باقی‌مونده"), so a removed/disabled team member's existing token would
   // otherwise keep working until it naturally expires (up to 12h). Checking
   // the live user status here closes that window down to this request.
-  const user = db.prepare('SELECT status FROM users WHERE id = ?').get(auth.userId);
+  // Role/isSuperAdmin are likewise read from the DB (not trusted from the
+  // token claims) so a role change or super-admin demotion also takes effect
+  // immediately instead of waiting out the token's remaining lifetime.
+  const user = db.prepare('SELECT status, role, is_super_admin FROM users WHERE id = ?').get(auth.userId);
   if (!user || user.status !== 'active') { send(res, 401, { error: 'invalid_session', message: 'حساب شما دیگر فعال نیست — لطفاً دوباره وارد شوید.' }); return null; }
+  auth.role = user.role;
+  auth.isSuperAdmin = !!user.is_super_admin;
   return auth;
 }
 
 function requireSuperAdmin(req, res) {
   const auth = authenticate(req);
-  if (!auth || !auth.isSuperAdmin) { send(res, 403, { error: 'forbidden', message: 'super admin access required' }); return null; }
+  if (!auth) { send(res, 401, { error: 'unauthorized' }); return null; }
+  const user = db.prepare('SELECT status, is_super_admin FROM users WHERE id = ?').get(auth.userId);
+  if (!user || user.status !== 'active' || !user.is_super_admin) { send(res, 403, { error: 'forbidden', message: 'super admin access required' }); return null; }
+  auth.isSuperAdmin = true;
   return auth;
 }
 
@@ -721,10 +729,12 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { error: 'not_found' });
 });
 
-server.listen(PORT, () => {
-  console.log(`AgentOS backend listening on http://localhost:${PORT}`);
-  const provider = resolveProvider();
-  console.log(provider === 'mock' ? 'AI Gateway: DEV_MOCK (set ANTHROPIC_API_KEY or OPENAI_API_KEY for real agent parsing)' : `AI Gateway: LIVE (${provider})`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`AgentOS backend listening on http://localhost:${PORT}`);
+    const provider = resolveProvider();
+    console.log(provider === 'mock' ? 'AI Gateway: DEV_MOCK (set ANTHROPIC_API_KEY or OPENAI_API_KEY for real agent parsing)' : `AI Gateway: LIVE (${provider})`);
+  });
+}
 
 module.exports = server;
