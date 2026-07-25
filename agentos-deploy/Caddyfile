@@ -1,6 +1,9 @@
-# Replace with your real domain. Caddy automatically gets and renews a
-# Let's Encrypt TLS certificate for it — no manual cert management needed.
-your-domain.com {
+# Caddy automatically gets and renews a Let's Encrypt TLS certificate for
+# this domain — no manual cert management needed. DNS (exirsms.ir -> this
+# server's IP, via Cloudflare, DNS-only/grey-cloud so Let's Encrypt's HTTP
+# challenge can reach Caddy directly) must already be propagated before
+# this works — see docs/ci-cd-setup.md's sibling doc on the domain cutover.
+exirsms.ir, www.exirsms.ir {
   reverse_proxy web:3000
 }
 
