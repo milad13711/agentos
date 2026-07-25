@@ -69,18 +69,24 @@ jobs:
             rsync -a --delete ~/agentos-src/agentos-backend/ ~/agentos-backend/ --exclude data
             rsync -a --delete ~/agentos-src/agentos-web/ ~/agentos-web/
 
-            # docker-compose.yml and Caddyfile live outside agentos-backend/
-            # and agentos-web/, so the rsyncs above never touched them —
-            # editing them in the repo used to silently not reach the server.
-            # Now they're kept in sync too: the repo (agentos-deploy/) is the
-            # source of truth, so any manual edit made directly on the server
-            # to ~/docker-compose.yml or ~/Caddyfile will be OVERWRITTEN on
-            # the next deploy — make those edits in agentos-deploy/ instead.
+            # docker-compose.yml, Caddyfile, and anything else under
+            # agentos-deploy/ (e.g. the xray/ build context) live outside
+            # agentos-backend/ and agentos-web/, so the rsyncs above never
+            # touch them — editing them in the repo used to silently not
+            # reach the server (bit twice: once for docker-compose.yml/
+            # Caddyfile, once for the xray/ subfolder added right after).
+            # Syncing the whole directory (no --delete: never removes
+            # anything from ~/ that isn't under agentos-deploy/ in the repo,
+            # like .env or agentos-backend/) means a *new* file/folder added
+            # under agentos-deploy/ in the future reaches the server too,
+            # without needing another one-off fix here. The repo is the
+            # source of truth for all of it — a manual edit made directly on
+            # the server to any of these files will be OVERWRITTEN on the
+            # next deploy.
             CADDY_BEFORE=""
             [ -f ~/Caddyfile ] && CADDY_BEFORE=$(md5sum ~/Caddyfile | awk '{print $1}')
 
-            rsync -a ~/agentos-src/agentos-deploy/docker-compose.yml ~/docker-compose.yml
-            rsync -a ~/agentos-src/agentos-deploy/Caddyfile ~/Caddyfile
+            rsync -a ~/agentos-src/agentos-deploy/ ~/
 
             CADDY_AFTER=$(md5sum ~/Caddyfile | awk '{print $1}')
 
