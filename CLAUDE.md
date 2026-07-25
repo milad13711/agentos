@@ -51,6 +51,7 @@ rm -rf agentos-backend/data
 11. تماس‌های AI Gateway (`callAnthropic`/`callOpenAI` در `agent.js`) یک timeout ۲۵ ثانیه‌ای دارن (`AI_GATEWAY_TIMEOUT_MS`). قبلاً نداشتن و اگه GapGPT کند/بی‌پاسخ می‌شد، درخواست برای همیشه "در حال پردازش" می‌موند بدون هیچ خطایی تو لاگ.
 12. تاریخچه‌ی چت (`ChatPanel.tsx`) تو `localStorage` مرورگر ذخیره می‌شه، با کلید per-user (`agentos_chat_messages:<userId>`) — قبلاً یک کلید ثابت بود که باعث می‌شد چت یک حساب تو حساب بعدی (روی همون مرورگر) دیده بشه. اگه فیچر مشابهی اضافه کردی، همیشه کلید `localStorage` رو namespace کن.
 13. `docker compose up -d --build` کانتینر `caddy` رو ری‌استارت **نمی‌کنه** فقط چون محتوای `Caddyfile` (که volume-mount شده) عوض شده — Compose فقط وقتی سرویسی رو recreate می‌کنه که تعریف خودِ سرویس (image/env/...) عوض بشه. بعد از هر تغییر تو `Caddyfile`، صریحاً `docker compose restart caddy` بزن، وگرنه کانفیگ قدیمی تو حافظه می‌مونه (این دقیقاً چیزیه که موقع فعال‌سازی HTTPS واقعی گیر کردیم).
+14. تو `agentos-web`، هیچ‌جا فقط `overflow-y-auto` تنها نذار — طبق اسپک CSS، اگه overflow-x رو صریح ست نکنی، مرورگر خودش overflow-x رو هم `auto` می‌کنه (نه `hidden`)، یعنی همون کانتینر می‌تونه جدا اسکرول افقی بگیره. این با موس رو دسکتاپ اصلاً حس نمی‌شه ولی رو گوشی با لمس خیلی اذیت‌کننده‌ست. همیشه `overflow-y-auto overflow-x-hidden` با هم بنویس (همه‌ی صفحات `(app)` الان همینطورن).
 
 ## پلن‌ها
 
@@ -70,3 +71,4 @@ Free (۰) → Starter (۹۹۰هزار/ماه) → Pro (۲.۹۹۹میلیون/م�
 
 - ✅ تست‌های خودکار بک‌اند (`agentos-backend/test/`, با `node:test` بدون dependency جدید) برای `dispatch`/Approval Gate/ایزوله‌بودن Tenant — به CI (`npm test` در `build-check`) وصل شدن، چون این‌ها دقیقاً چیزهاییه که فاز ۱ رو migrate کردیم و فقط با curl دستی تست شده بودن.
 - ✅ Super Admin Dashboard در Next.js (`/admin`) — قبلاً فقط تو `frontend-local/admin.html` (HTML خام) بود. همه‌ی ۵ تب (KPI، Tenantها، پلن‌ها، Marketplace، Audit Log) رو داره؛ بک‌اندش تغییری نکرد.
+- ✅ کل UI موبایل/ریسپانسیو شد: منوی sidebar روی موبایل به drawer قابل‌باز/بسته تبدیل شد (`components/AppShell.tsx`)، همه‌ی جدول‌ها به‌جای شکستن layout خودشون جدا اسکرول افقی می‌گیرن، و باگ واقعی `overflow-y-auto` (گیر #۱۴ بالا) که فقط رو گوشی با لمس قابل کشف بود پیدا و فیکس شد.
