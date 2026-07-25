@@ -58,6 +58,12 @@ function requireAuth(req, res) {
   const tenant = db.prepare('SELECT status FROM tenants WHERE id = ?').get(auth.tenantId);
   if (!tenant) { send(res, 401, { error: 'invalid_session', message: 'نشست شما دیگر معتبر نیست (Tenant پیدا نشد) — لطفاً دوباره وارد شوید.' }); return null; }
   if (tenant.status === 'suspended') { send(res, 403, { error: 'tenant_suspended' }); return null; }
+  // Session tokens are stateless (no server-side revocation list — see README
+  // "باقی‌مونده"), so a removed/disabled team member's existing token would
+  // otherwise keep working until it naturally expires (up to 12h). Checking
+  // the live user status here closes that window down to this request.
+  const user = db.prepare('SELECT status FROM users WHERE id = ?').get(auth.userId);
+  if (!user || user.status !== 'active') { send(res, 401, { error: 'invalid_session', message: 'حساب شما دیگر فعال نیست — لطفاً دوباره وارد شوید.' }); return null; }
   return auth;
 }
 
@@ -129,7 +135,10 @@ route('POST', '/api/auth/login', async (req, res, params, ip) => {
   if (rateLimited('login:' + ip)) return send(res, 429, { error: 'too_many_requests' });
   const { email, password } = await readBody(req);
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  if (!user || !verifyPassword(password || '', user.salt, user.password_hash)) {
+  if (!user || !verifyPassword(password || '', user.salt, user.password_hash) || user.status !== 'active') {
+    // Same generic error for "wrong password" and "account disabled" — a
+    // distinct message would let someone probe whether a removed
+    // teammate's account still exists.
     return send(res, 401, { error: 'invalid_credentials' });
   }
   const tenant = db.prepare('SELECT * FROM tenants WHERE id = ?').get(user.tenant_id);
@@ -443,6 +452,9 @@ route('POST', '/api/billing/verify', async (req, res) => {
   if (!authority) return send(res, 400, { error: 'authority_required' });
   try {
     const result = await verifyPayment({ tenantId: auth.tenantId, authority, status });
+    if (result.ok && !result.alreadyProcessed) {
+      audit(auth.tenantId, 'user', auth.userId, 'subscription_paid', 'plan:' + result.planKey, { refId: result.refId, amountToman: result.amountToman });
+    }
     send(res, result.ok ? 200 : 402, result);
   } catch (e) {
     send(res, 502, { error: 'payment_gateway_error', message: e.message });
@@ -600,8 +612,17 @@ route('GET', '/api/admin/audit', async (req, res) => {
 });
 
 // ---- reports (real file downloads — Excel-compatible CSV with UTF-8 BOM for Persian text) ----
+// CSV/formula-injection guard: report rows are user-entered CRM data (contact
+// names, deal titles, ...). If a cell's text starts with =, +, -, @, or a
+// tab, Excel/LibreOffice treats it as a formula when the file is opened —
+// prefixing a leading apostrophe forces it to be read as plain text instead.
+// (Same OWASP-recommended mitigation applied in xlsx-writer.js.)
+function sanitizeForSpreadsheet(v) {
+  if (typeof v !== 'string') return v; // numbers/null can't start with a formula trigger
+  return /^[=+\-@\t]/.test(v) ? `'${v}` : v;
+}
 function csvEscape(v) {
-  const s = v == null ? '' : String(v);
+  const s = sanitizeForSpreadsheet(v == null ? '' : String(v));
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function sendCsv(res, filename, columns, rows) {
@@ -638,7 +659,8 @@ route('GET', '/api/reports/tasks.csv', async (req, res) => {
 
 // Real .xlsx (OOXML) reports — genuine Excel files, not CSV-with-an-extension.
 function sendXlsx(res, filename, sheetName, headers, rows) {
-  const buf = buildXlsx(sheetName, headers, rows);
+  const safeRows = rows.map(row => row.map(sanitizeForSpreadsheet));
+  const buf = buildXlsx(sheetName, headers, safeRows);
   res.writeHead(200, {
     'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'Content-Disposition': `attachment; filename="${filename}"`,

@@ -18,18 +18,49 @@ export default function ReportsPage() {
     const w = window.open('', '_blank');
     if (!w) return;
     const cols = Object.keys(rows[0] || {});
-    w.document.write(`
-      <html dir="rtl"><head><meta charset="utf-8"><title>گزارش ${key}</title></head>
-      <body style="font-family:Tahoma,sans-serif;padding:24px">
-        <h2>گزارش ${key}</h2>
-        <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">
-          <thead><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map((r: any) => `<tr>${cols.map((c) => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
-        <script>window.print()</script>
-      </body></html>
-    `);
-    w.document.close();
+
+    // Built with DOM APIs (textContent, not innerHTML/document.write) so a
+    // record whose name/title contains "<script>..." or similar can never
+    // execute here — every row value below is user-entered CRM data
+    // (contact names, deal titles, ...), so it must be treated as untrusted.
+    const doc = w.document;
+    doc.open();
+    doc.write('<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"></head><body></body></html>');
+    doc.close();
+    doc.title = `گزارش ${key}`;
+    const style = doc.createElement('style');
+    style.textContent = 'body{font-family:Tahoma,sans-serif;padding:24px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #999;padding:6px}';
+    doc.head.appendChild(style);
+
+    const h2 = doc.createElement('h2');
+    h2.textContent = `گزارش ${key}`;
+    doc.body.appendChild(h2);
+
+    const table = doc.createElement('table');
+    const thead = doc.createElement('thead');
+    const headRow = doc.createElement('tr');
+    cols.forEach((c) => {
+      const th = doc.createElement('th');
+      th.textContent = c;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = doc.createElement('tbody');
+    rows.forEach((r: any) => {
+      const tr = doc.createElement('tr');
+      cols.forEach((c) => {
+        const td = doc.createElement('td');
+        td.textContent = r[c] ?? '';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    doc.body.appendChild(table);
+
+    w.print();
   }
 
   return (

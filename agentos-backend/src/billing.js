@@ -89,11 +89,11 @@ async function verifyPayment({ tenantId, authority, status }) {
     db.prepare(`UPDATE subscription_payments SET status = 'paid', ref_id = ?, paid_at = ? WHERE id = ?`)
       .run(refId ? String(refId) : null, now(), payment.id);
     db.prepare('UPDATE tenants SET plan_key = ? WHERE id = ?').run(payment.plan_key, tenantId);
-    db.prepare(`INSERT INTO audit_logs (id, tenant_id, actor_type, actor_id, action, entity, detail_json, created_at)
-                VALUES (?,?,?,?,?,?,?,?)`)
-      .run(uid(), tenantId, 'user', null, 'subscription_paid', 'plan:' + payment.plan_key,
-           JSON.stringify({ refId, amountToman: payment.amount_toman }), now());
-    return { ok: true, refId, planKey: payment.plan_key };
+    // Audit logging is the caller's job now (server.js has the authenticated
+    // userId; billing.js doesn't) — see 'subscription_paid' in the
+    // /api/billing/verify route. This also keeps billing.js from writing to
+    // the events table directly (single choke point stays in agent.js's audit()).
+    return { ok: true, refId, planKey: payment.plan_key, amountToman: payment.amount_toman };
   }
 
   db.prepare(`UPDATE subscription_payments SET status = 'failed' WHERE id = ?`).run(payment.id);
