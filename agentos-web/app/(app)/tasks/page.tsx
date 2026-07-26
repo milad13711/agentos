@@ -71,9 +71,9 @@ export default function TasksPage() {
               ))}
             </select>
           </div>
-          <div className="max-w-[160px]">
-            <label className="block text-[11px] text-[var(--text-3)] mb-1">موعد</label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm outline-none" />
+          <div className="max-w-[190px]">
+            <label className="block text-[11px] text-[var(--text-3)] mb-1">موعد (تاریخ و ساعت)</label>
+            <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm outline-none" dir="ltr" />
           </div>
           <button onClick={addTask} className="bg-[var(--primary)] text-[#1a1400] font-bold text-sm rounded-lg px-4 py-2">
             افزودن
@@ -88,6 +88,7 @@ export default function TasksPage() {
               <tr className="text-[11px] text-[var(--text-3)]">
                 <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">عنوان</th>
                 <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">مسئول</th>
+                <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">موعد</th>
                 <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">وضعیت</th>
                 <th className="text-right px-3 py-2.5 border-b border-[var(--border)]">ارجاع به</th>
                 <th className="border-b border-[var(--border)]" />
@@ -100,6 +101,9 @@ export default function TasksPage() {
                     <b className="text-[var(--text-1)]">{t.title}</b>
                   </td>
                   <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">{t.assignee_name || '—'}</td>
+                  <td className="px-3 py-2.5 border-b border-[var(--border-soft)] text-xs">
+                    {t.due_at ? new Date(t.due_at).toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                  </td>
                   <td className="px-3 py-2.5 border-b border-[var(--border-soft)]">
                     <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${t.status === 'open' ? 'bg-[var(--info-soft)] text-[var(--info)]' : 'bg-[var(--success-soft)] text-[var(--success)]'}`}>
                       {t.status === 'open' ? 'باز' : 'انجام‌شده'}
@@ -125,7 +129,7 @@ export default function TasksPage() {
               ))}
               {tasks.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center text-[var(--text-3)] py-6">
+                  <td colSpan={6} className="text-center text-[var(--text-3)] py-6">
                     وظیفه‌ای ثبت نشده
                   </td>
                 </tr>

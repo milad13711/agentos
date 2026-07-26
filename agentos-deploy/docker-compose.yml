@@ -36,6 +36,12 @@ services:
       - OPENAI_STT_MODEL=${OPENAI_STT_MODEL:-}
       - OPENAI_TTS_MODEL=${OPENAI_TTS_MODEL:-}
       - OPENAI_TTS_VOICE=${OPENAI_TTS_VOICE:-}
+      # Web Push (browser/PWA) notifications — generate a pair once with
+      # `node -e "console.log(require('web-push').generateVAPIDKeys())"`.
+      # Empty = push disabled, no crash.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Only needed if api.telegram.org is filtered from this server (it is,

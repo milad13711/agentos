@@ -118,6 +118,25 @@ function ResultCard({ result }: { result: any }) {
           <b>رکورد جدید در «{result.data.module?.name}»</b>
         </div>
       );
+    case 'interaction_logged':
+      return (
+        <div className={box}>
+          <b>یادداشت ثبت شد</b>
+          <div className="mt-1 text-[var(--text-2)]">{result.data.note}</div>
+        </div>
+      );
+    case 'message_sent':
+      return (
+        <div className={box}>
+          ✉️ پیام تلگرام به «{result.data.label}» ارسال شد
+        </div>
+      );
+    case 'telegram_not_linked':
+      return (
+        <div className="mt-1.5 border border-[var(--danger)]/30 border-r-[3px] border-r-[var(--danger)] bg-[var(--surface-2)] rounded-lg rounded-r-sm p-3 text-xs">
+          «{result.data.label}» هنوز تلگرامش وصل نشده — از صفحه مخاطبین یک لینک اتصال بگیر و براش بفرست.
+        </div>
+      );
     case 'plan_limit':
       return (
         <div className="mt-1.5 border border-[var(--danger)]/30 border-r-[3px] border-r-[var(--danger)] bg-[var(--surface-2)] rounded-lg rounded-r-sm p-3 text-xs">

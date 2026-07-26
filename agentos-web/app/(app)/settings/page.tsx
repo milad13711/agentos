@@ -9,6 +9,15 @@ async function api(path: string, opts: RequestInit = {}) {
   return data;
 }
 
+// VAPID public keys arrive base64url-encoded; pushManager.subscribe() needs
+// a raw Uint8Array — this is the standard conversion (MDN's own example).
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
 export default function SettingsPage() {
   const [agentName, setAgentName] = useState('');
   const [agentPersona, setAgentPersona] = useState('');
@@ -17,6 +26,10 @@ export default function SettingsPage() {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [linkCode, setLinkCode] = useState<{ code: string; botUsername: string | null; deepLink: string | null } | null>(null);
   const [telegramMsg, setTelegramMsg] = useState<string | null>(null);
+
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
 
   function loadMe() {
     return api('me').then((me) => {
@@ -27,7 +40,50 @@ export default function SettingsPage() {
   }
   useEffect(() => {
     loadMe();
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+      setPushSupported(true);
+      navigator.serviceWorker.ready
+        .then((reg) => reg.pushManager.getSubscription())
+        .then((sub) => setPushSubscribed(!!sub))
+        .catch(() => {});
+    }
   }, []);
+
+  async function enablePush() {
+    setPushMsg(null);
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setPushMsg('اجازه اعلان داده نشد.');
+        return;
+      }
+      const { publicKey } = await api('push/public-key');
+      const reg = await navigator.serviceWorker.ready;
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+      await api('push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: subscription.toJSON() }) });
+      setPushSubscribed(true);
+    } catch (e: any) {
+      setPushMsg(e.message === 'push_not_configured' ? 'قابلیت اعلان روی این سرور فعال نشده.' : 'خطا: ' + e.message);
+    }
+  }
+
+  async function disablePush() {
+    setPushMsg(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await api('push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) });
+        await sub.unsubscribe();
+      }
+      setPushSubscribed(false);
+    } catch (e: any) {
+      setPushMsg('خطا: ' + e.message);
+    }
+  }
 
   async function save() {
     setMsg(null);
@@ -129,6 +185,28 @@ export default function SettingsPage() {
           </>
         )}
         {telegramMsg && <div className="mt-3 text-xs text-[var(--text-3)]">{telegramMsg}</div>}
+      </div>
+
+      <div className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl p-4 max-w-md">
+        <h3 className="font-bold text-sm mb-1">اعلان‌های Push</h3>
+        <p className="text-[11px] text-[var(--text-3)] mb-3">
+          یادآوری وظایف رو حتی وقتی مرورگر بسته‌ست، به‌صورت اعلان روی گوشی یا کامپیوترت دریافت کن. برای بهترین تجربه، اول این صفحه رو «Add to Home Screen» کن.
+        </p>
+        {!pushSupported ? (
+          <div className="text-xs text-[var(--text-3)]">مرورگر یا دستگاه فعلی از اعلان‌های Push پشتیبانی نمی‌کنه.</div>
+        ) : pushSubscribed ? (
+          <>
+            <div className="text-xs text-[var(--success)] bg-[var(--success-soft)] rounded-lg px-3 py-2 mb-3">✓ اعلان‌ها فعاله</div>
+            <button onClick={disablePush} className="bg-[var(--surface-3)] text-[var(--danger)] font-bold text-xs rounded-lg px-3.5 py-2">
+              غیرفعال کردن
+            </button>
+          </>
+        ) : (
+          <button onClick={enablePush} className="bg-[var(--primary)] text-[#1a1400] font-bold text-sm rounded-lg px-4 py-2">
+            فعال‌سازی اعلان‌ها
+          </button>
+        )}
+        {pushMsg && <div className="mt-3 text-xs text-[var(--text-3)]">{pushMsg}</div>}
       </div>
     </div>
   );

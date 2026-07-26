@@ -71,6 +71,27 @@ function interpolate(template, values) {
   return String(template || '').replace(/\{\{(\w+)\}\}/g, (_, key) => (values[key] != null ? String(values[key]) : ''));
 }
 
+// Resolves a task's due_at with hour/minute precision, not just a day count.
+// - params.dueAt (absolute ms) always wins if given.
+// - params.dueHour/dueMinute set a specific wall-clock time on the target
+//   day (dueInDays from today, default today) — e.g. "امروز ساعت ۱۷" ->
+//   dueHour=17, no dueInDays. If that time has already passed today and no
+//   explicit day offset was given, it rolls to tomorrow instead of firing
+//   immediately (a reminder for "5pm" said at 6pm means tomorrow, not now).
+// - Otherwise falls back to the original day-count-only behavior.
+function computeDueAt(params, nowMs) {
+  if (params.dueAt != null) return params.dueAt;
+  if (params.dueHour != null || params.dueMinute != null) {
+    const base = new Date(nowMs + (params.dueInDays != null ? Number(params.dueInDays) : 0) * 86400000);
+    base.setHours(params.dueHour != null ? Number(params.dueHour) : base.getHours(), params.dueMinute != null ? Number(params.dueMinute) : 0, 0, 0);
+    let ts = base.getTime();
+    if (params.dueInDays == null && ts <= nowMs) ts += 86400000;
+    return ts;
+  }
+  if (params.dueInDays != null) return nowMs + Number(params.dueInDays) * 86400000;
+  return null;
+}
+
 async function runCreateTaskAction(tenantId, config, values, actorUserId) {
   const title = interpolate(config.titleTemplate, values) || 'وظیفه خودکار';
   const dueAt = config.dueInDays != null ? now() + Number(config.dueInDays) * 86400000 : null;
@@ -250,13 +271,59 @@ const registry = {
       const assignee = params.assigneeId
         ? await findTeamMember(tenantId, params.assigneeId, null)
         : (params.assigneeName ? await findTeamMember(tenantId, null, params.assigneeName) : null);
-      const dueAt = params.dueAt != null ? params.dueAt : (params.dueInDays != null ? now() + Number(params.dueInDays) * 86400000 : null);
-      const id = uid(); const t = now();
+      const t = now();
+      const dueAt = computeDueAt(params, t);
+      const id = uid();
       await db.run(`INSERT INTO tasks (id, tenant_id, title, description, assignee_id, created_by, related_entity, due_at, status, created_at, updated_at)
                   VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [id, tenantId, params.title || 'وظیفه جدید', params.description || '', (assignee ? assignee.id : actorUserId), actorUserId, params.relatedEntity || null, dueAt, 'open', t, t]);
       const row = await db.get('SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?', [id]);
       return { entityId: id, data: row };
+    },
+  },
+  'interaction.logged': {
+    entityType: 'interaction',
+    async apply(tenantId, actorUserId, params) {
+      // Either a contact or a deal ("لید") can be logged against — whichever
+      // name/id the caller gave resolves. entityType/entityId is fixed by
+      // whichever one actually matched, not by which field the caller passed.
+      let entityType = null, entityId = null;
+      if (params.entityType === 'deal' || (!params.entityType && (params.dealTitle || params.dealId))) {
+        const deal = await findDeal(tenantId, params.dealId || params.entityId, params.dealTitle);
+        if (deal) { entityType = 'deal'; entityId = deal.id; }
+      }
+      if (!entityId) {
+        const contact = await findContact(tenantId, params.contactId || params.entityId, params.contactName || params.name);
+        if (contact) { entityType = 'contact'; entityId = contact.id; }
+      }
+      if (!entityId || !params.note) return null;
+      const id = uid(); const t = now();
+      await db.run('INSERT INTO interactions (id, tenant_id, entity_type, entity_id, note, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
+        [id, tenantId, entityType, entityId, params.note, actorUserId, t]);
+      return { entityId: id, data: await db.get('SELECT * FROM interactions WHERE id = ?', [id]) };
+    },
+  },
+  // Sends a message to a customer/lead through the Telegram bot (requires
+  // the contact to already have linked their Telegram chat — see
+  // contact_link_codes / telegram.js). The send itself is also logged as an
+  // interaction note automatically, so it shows up in the same history as
+  // manually-logged calls/meetings.
+  'contact.messaged': {
+    entityType: 'contact',
+    async apply(tenantId, actorUserId, params) {
+      const contact = await findContact(tenantId, params.contactId || params.id, params.contactName || params.name);
+      if (!contact || !params.message) return null;
+      if (!contact.telegram_chat_id) {
+        return { skipEvent: true, data: { type: 'telegram_not_linked', data: { label: contact.name } } };
+      }
+      // Required here, not at module load — telegram.js requires agent.js
+      // which requires this module, so a top-level require would be circular.
+      const telegram = require('./telegram');
+      await telegram.sendMessage(contact.telegram_chat_id, params.message);
+      const id = uid(); const t = now();
+      await db.run('INSERT INTO interactions (id, tenant_id, entity_type, entity_id, note, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
+        [id, tenantId, 'contact', contact.id, `پیام تلگرام ارسال شد: ${params.message}`, actorUserId, t]);
+      return { entityId: contact.id, data: { type: 'message_sent', data: { label: contact.name, message: params.message } } };
     },
   },
 };

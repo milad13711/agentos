@@ -71,6 +71,7 @@ CREATE TABLE contacts (
   name TEXT NOT NULL,
   phone TEXT,
   company TEXT,
+  telegram_chat_id TEXT UNIQUE,
   created_by TEXT,
   created_at BIGINT NOT NULL
 );
@@ -224,6 +225,41 @@ CREATE TABLE tasks (
 );
 CREATE INDEX idx_tasks_tenant ON tasks(tenant_id);
 CREATE INDEX idx_tasks_assignee ON tasks(assignee_id);
+
+-- Every logged touch with a contact/lead (call, message, meeting...) — a
+-- running history, never overwritten. entity_id points at contacts.id or
+-- deals.id (a "lead" is a deal with stage='سرنخ' — see agent.js).
+CREATE TABLE interactions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_by TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX idx_interactions_entity ON interactions(tenant_id, entity_type, entity_id);
+
+-- One-time codes for linking a CONTACT's Telegram chat (separate from
+-- telegram_link_codes, which is for team member logins).
+CREATE TABLE contact_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
+-- Web Push (browser/PWA) subscriptions, one row per browser/device.
+CREATE TABLE push_subscriptions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  keys_json TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX idx_push_subs_user ON push_subscriptions(user_id);
 
 -- ============================================================================
 -- Row-Level Security — the actual point of migrating to Postgres.

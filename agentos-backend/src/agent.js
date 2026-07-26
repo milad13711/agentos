@@ -57,6 +57,7 @@ const DOMAIN_OF = {
   build_module: 'builder', delete_module: 'builder', module_create_record: 'builder', module_list_records: 'builder',
   publish_module: 'builder', install_module: 'builder', list_marketplace: 'builder',
   create_task: 'team', list_tasks: 'team', delegate_task: 'team',
+  log_interaction: 'sales', message_contact: 'sales',
   generate_report: 'reports',
   none: 'none'
 };
@@ -134,9 +135,11 @@ ${await dataSnapshot(tenantId)}
 - publish_module {moduleName} — حساس
 - install_module {moduleName} — حساس
 - list_marketplace {}
-- create_task {title, assigneeName?, dueInDays?} — یادآور/پیگیری؛ اگه assigneeName داده نشد یعنی برای خود کاربر است
+- create_task {title, assigneeName?, dueInDays?, dueHour?, dueMinute?} — یادآور/پیگیری؛ اگه assigneeName داده نشد یعنی برای خود کاربر است. اگه کاربر ساعت مشخصی گفت (مثلاً «ساعت ۵ بعدازظهر»، «ساعت ۹ صبح فردا») حتماً dueHour (۰ تا ۲۳) و در صورت نیاز dueMinute رو هم پر کن — این یادآور دقیقاً همون ساعت از طریق تلگرام/Push ارسال می‌شه، نه فقط همون روز. اگه فقط روز گفته شد بدون ساعت مشخص، فقط dueInDays کافیه.
 - list_tasks {}
 - delegate_task {taskTitle, assigneeName} — ارجاع وظیفه به یکی از اعضای تیم بالا
+- log_interaction {contactName? یا dealTitle?, note} — هر بار که کاربر گزارش می‌ده با یک مشتری/سرنخ ارتباط گرفته (تماس، جلسه، پیام و...)، این یادداشت رو روی همون مخاطب/سرنخ (دقیقاً یکی از این دو — contactName برای مخاطب، dealTitle برای سرنخ/معامله) ثبت کن تا تاریخچه‌ش نگه داشته بشه. اگه مخاطب/سرنخ پیدا نشد، action رو none بذار و در reply بگو کدوم رو دقیق‌تر بگه.
+- message_contact {contactName, message} — ارسال پیام مستقیم به یک مخاطب/مشتری خاص از طریق بات تلگرام (نه به اعضای تیم — این فقط برای مشتری/سرنخ بیرونیه). فقط وقتی مخاطب از قبل تلگرامش به AgentOS وصل شده کار می‌کنه؛ اگه وصل نبود، در reply همین رو بگو (باید از صفحه مخاطبین لینک اتصال گرفته بشه).
 - generate_report {reportType} — یکی از: contacts | deals | invoices | tasks
 - none {} — احوالپرسی یا درخواست نامفهوم
 
@@ -406,6 +409,16 @@ async function executeAction(tenantId, userId, action, params) {
         SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id
         WHERE t.tenant_id = ? AND t.status = 'open' ORDER BY (t.due_at IS NULL), t.due_at ASC LIMIT 20`, [tenantId]);
       return { type: 'tasks_table', data: rows };
+    }
+    case 'log_interaction': {
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'interaction.logged', params);
+      if (!data) return null;
+      return { type: 'interaction_logged', data };
+    }
+    case 'message_contact': {
+      const { data } = await dispatch({ tenantId, userId, role: 'agent' }, 'contact.messaged', params);
+      if (!data) return null;
+      return data; // already shaped {type: 'message_sent'|'telegram_not_linked', data: {...}}
     }
     case 'delegate_task': {
       const task = await findTaskByTitle(tenantId, params.taskTitle);

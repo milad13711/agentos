@@ -255,6 +255,15 @@ async function unlink(userId) {
   await db.run('UPDATE users SET telegram_chat_id = NULL WHERE id = ?', [userId]);
 }
 
+// ---- linking a CONTACT's (customer/lead's) chat, not a team member's ----
+async function consumeContactLinkCode(code, chatId) {
+  const row = await db.get('SELECT * FROM contact_link_codes WHERE code = ?', [code]);
+  if (!row || row.expires_at < now()) return null;
+  await db.run('DELETE FROM contact_link_codes WHERE code = ?', [code]);
+  await db.run('UPDATE contacts SET telegram_chat_id = ? WHERE id = ?', [String(chatId), row.contact_id]);
+  return row;
+}
+
 // ---- message handling ----
 // Recent plain-text turns per chat, in-memory only (like the web ChatPanel's
 // own history, which also isn't persisted server-side) — good enough for
@@ -309,12 +318,26 @@ async function handleMessage(msg) {
   const text = (msg.text || '').trim();
 
   if (text.startsWith('/start')) {
-    const code = text.split(/\s+/)[1];
-    if (!code) {
+    const arg = text.split(/\s+/)[1];
+    if (!arg) {
       await sendMessage(chatId, 'برای اتصال حساب، از صفحه «تنظیمات» توی AgentOS یک کد بگیر و همینجا بفرست: /start <کد>');
       return;
     }
-    const linked = await consumeLinkCode(code, chatId);
+    // A team member links their own AgentOS login (plain 6-digit code); a
+    // customer/lead links as a CONTACT instead, via a "contact_<code>"
+    // deep-link a staff member shared with them from the Contacts page —
+    // that chat then never goes through act(), only receives outbound
+    // messages (see 'contact.messaged' in actions.js).
+    if (arg.startsWith('contact_')) {
+      const linked = await consumeContactLinkCode(arg.slice('contact_'.length), chatId);
+      if (!linked) {
+        await sendMessage(chatId, 'این لینک نامعتبر یا منقضی‌شده — از فروشنده/پشتیبانی یک لینک جدید بخواه.');
+        return;
+      }
+      await sendMessage(chatId, '✅ این چت به AgentOS وصل شد — پیام‌هایی که براتون می‌فرستیم از همینجا می‌رسه.');
+      return;
+    }
+    const linked = await consumeLinkCode(arg, chatId);
     if (!linked) {
       await sendMessage(chatId, 'این کد نامعتبر یا منقضی‌شده — یک کد جدید از تنظیمات بگیر.');
       return;

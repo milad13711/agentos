@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   name TEXT NOT NULL,
   phone TEXT,
   company TEXT,
+  telegram_chat_id TEXT,
   created_by TEXT,
   created_at INTEGER NOT NULL
 );
@@ -308,6 +309,48 @@ CREATE TABLE IF NOT EXISTS telegram_poll_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   last_update_id INTEGER NOT NULL DEFAULT 0
 );
+
+-- Every time a contact/lead is actually touched (call, message, meeting...),
+-- a note gets logged here — a running history, never overwritten. entity_id
+-- points at either a contacts row or a deals row (a "lead" IS a deal with
+-- stage='سرنخ' in this system — see agent.js's system prompt note on this).
+CREATE TABLE IF NOT EXISTS interactions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL, -- 'contact' | 'deal'
+  entity_id TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_by TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interactions_entity ON interactions(tenant_id, entity_type, entity_id);
+
+-- One-time codes for linking a CONTACT's Telegram chat (not a team member's
+-- login — a separate table from telegram_link_codes on purpose, since that
+-- one's user_id is NOT NULL and this is a fundamentally different subject).
+-- Staff shares the deep link with the customer; once they start the bot with
+-- it, contacts.telegram_chat_id gets set and staff can message them from the
+-- CRM via the bot (see 'contact.messaged' in actions.js).
+CREATE TABLE IF NOT EXISTS contact_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- Web Push (browser/PWA notification) subscriptions — one row per
+-- browser/device a user has enabled notifications on. Separate channel from
+-- Telegram (reminders.js sends through both, independently).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  keys_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 `);
 
   // --- safe migrations for columns added after the tables already existed ---
@@ -329,6 +372,8 @@ CREATE TABLE IF NOT EXISTS telegram_poll_state (
   await safeAlter(`ALTER TABLE users ADD COLUMN telegram_chat_id TEXT`);
   await safeAlter(`ALTER TABLE tasks ADD COLUMN reminder_sent_at INTEGER`);
   await safeAlter(`CREATE UNIQUE INDEX idx_users_telegram_chat ON users(telegram_chat_id)`);
+  await safeAlter(`ALTER TABLE contacts ADD COLUMN telegram_chat_id TEXT`);
+  await safeAlter(`CREATE UNIQUE INDEX idx_contacts_telegram_chat ON contacts(telegram_chat_id)`);
 
   await seedPlans(db);
 }
@@ -391,6 +436,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   name TEXT NOT NULL,
   phone TEXT,
   company TEXT,
+  telegram_chat_id TEXT UNIQUE,
   created_by TEXT,
   created_at BIGINT NOT NULL
 );
@@ -529,6 +575,35 @@ CREATE TABLE IF NOT EXISTS telegram_poll_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   last_update_id BIGINT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS interactions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_by TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interactions_entity ON interactions(tenant_id, entity_type, entity_id);
+
+CREATE TABLE IF NOT EXISTS contact_link_codes (
+  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  keys_json TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 `);
 
   await seedPlans(db);

@@ -11,6 +11,7 @@ const { act, resolvePending, audit, resolveProvider } = require('./agent');
 const { dispatch, AUTOMATION_ACTION_TYPES } = require('./actions');
 const { createPaymentRequest, verifyPayment } = require('./billing');
 const voice = require('./voice');
+const push = require('./push');
 const telegram = require('./telegram');
 const { startReminderWorker } = require('./reminders');
 
@@ -358,6 +359,54 @@ route('DELETE', '/api/contacts/:id', async (req, res, params) => {
   send(res, 200, { deleted: true });
 });
 
+// Every time a contact/lead is actually touched, this keeps a running,
+// never-overwritten history (see interactions table) — used for both
+// contacts and deals ("لید"s) below.
+route('GET', '/api/contacts/:id/interactions', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  send(res, 200, await db.all(
+    'SELECT * FROM interactions WHERE tenant_id = ? AND entity_type = ? AND entity_id = ? ORDER BY created_at DESC',
+    [auth.tenantId, 'contact', params.id]));
+});
+route('POST', '/api/contacts/:id/interactions', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const { note } = await readBody(req);
+  if (!note || !note.trim()) return send(res, 400, { error: 'note_required' });
+  const { data } = await dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'interaction.logged', { entityType: 'contact', entityId: params.id, note: note.trim() });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  send(res, 201, data);
+});
+
+// Telegram linking for a specific contact (separate from a team member's own
+// account linking in Settings) — lets staff send that contact a message
+// through the bot once they've clicked the deep link and started it.
+route('POST', '/api/contacts/:id/telegram/link-code', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const contact = await db.get('SELECT id FROM contacts WHERE id = ? AND tenant_id = ?', [params.id, auth.tenantId]);
+  if (!contact) return send(res, 404, { error: 'not_found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  await db.run('INSERT INTO contact_link_codes (code, tenant_id, contact_id, expires_at, created_at) VALUES (?,?,?,?,?)',
+    [code, auth.tenantId, contact.id, now() + 10 * 60 * 1000, now()]);
+  const botUsername = await telegram.getBotUsername().catch(() => null);
+  send(res, 200, { code, botUsername, deepLink: botUsername ? `https://t.me/${botUsername}?start=contact_${code}` : null });
+});
+route('DELETE', '/api/contacts/:id/telegram', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const contact = await db.get('SELECT id FROM contacts WHERE id = ? AND tenant_id = ?', [params.id, auth.tenantId]);
+  if (!contact) return send(res, 404, { error: 'not_found' });
+  await db.run('UPDATE contacts SET telegram_chat_id = NULL WHERE id = ?', [contact.id]);
+  send(res, 200, { unlinked: true });
+});
+route('POST', '/api/contacts/:id/message', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const { message } = await readBody(req);
+  if (!message || !message.trim()) return send(res, 400, { error: 'message_required' });
+  const { data } = await dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'contact.messaged', { contactId: params.id, message: message.trim() });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  if (data.type === 'telegram_not_linked') return send(res, 409, { error: 'telegram_not_linked', message: 'این مخاطب هنوز تلگرامش وصل نشده — از دکمه «اتصال تلگرام مشتری» یک لینک بگیر و براش بفرست.' });
+  send(res, 200, data);
+});
+
 // ---- deals ----
 route('GET', '/api/deals', async (req, res) => {
   const auth = await requireAuth(req, res); if (!auth) return;
@@ -382,6 +431,20 @@ route('DELETE', '/api/deals/:id', async (req, res, params) => {
   const { data } = await dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'deal.deleted', { id: params.id });
   if (!data) return send(res, 404, { error: 'not_found' });
   send(res, 200, { deleted: true });
+});
+route('GET', '/api/deals/:id/interactions', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  send(res, 200, await db.all(
+    'SELECT * FROM interactions WHERE tenant_id = ? AND entity_type = ? AND entity_id = ? ORDER BY created_at DESC',
+    [auth.tenantId, 'deal', params.id]));
+});
+route('POST', '/api/deals/:id/interactions', async (req, res, params) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const { note } = await readBody(req);
+  if (!note || !note.trim()) return send(res, 400, { error: 'note_required' });
+  const { data } = await dispatch({ tenantId: auth.tenantId, userId: auth.userId, role: auth.role }, 'interaction.logged', { entityType: 'deal', entityId: params.id, note: note.trim() });
+  if (!data) return send(res, 404, { error: 'not_found' });
+  send(res, 201, data);
 });
 
 // ---- invoices ----
@@ -828,6 +891,28 @@ route('GET', '/api/reports/tasks.xlsx', async (req, res) => {
   const auth = await requireAuth(req, res); if (!auth) return;
   const rows = await db.all(`SELECT t.title, u.name as assignee_name, t.status, t.due_at FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.tenant_id = ? ORDER BY t.created_at DESC`, [auth.tenantId]);
   sendXlsx(res, 'tasks.xlsx', 'وظایف', ['عنوان','مسئول','وضعیت','موعد'], rows.map(r => [r.title, r.assignee_name, r.status, r.due_at ? new Date(r.due_at).toLocaleDateString('fa-IR') : '']));
+});
+
+// ---- web push (browser/PWA notifications — independent of Telegram) ----
+route('GET', '/api/push/public-key', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  if (!push.pushEnabled()) return send(res, 501, { error: 'push_not_configured' });
+  send(res, 200, { publicKey: process.env.VAPID_PUBLIC_KEY });
+});
+route('POST', '/api/push/subscribe', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  if (!push.pushEnabled()) return send(res, 501, { error: 'push_not_configured' });
+  const { subscription } = await readBody(req);
+  if (!subscription || !subscription.endpoint || !subscription.keys) return send(res, 400, { error: 'invalid_subscription' });
+  await push.saveSubscription(auth.tenantId, auth.userId, subscription);
+  send(res, 201, { subscribed: true });
+});
+route('DELETE', '/api/push/subscribe', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  const { endpoint } = await readBody(req);
+  if (!endpoint) return send(res, 400, { error: 'endpoint_required' });
+  await push.removeSubscription(endpoint);
+  send(res, 200, { unsubscribed: true });
 });
 
 // ---- audit ----
