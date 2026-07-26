@@ -10,6 +10,7 @@ const { hashPassword, verifyPassword, signToken, authenticate } = require('./aut
 const { act, resolvePending, audit, resolveProvider } = require('./agent');
 const { dispatch, AUTOMATION_ACTION_TYPES } = require('./actions');
 const { createPaymentRequest, verifyPayment } = require('./billing');
+const voice = require('./voice');
 const telegram = require('./telegram');
 const { startReminderWorker } = require('./reminders');
 
@@ -52,6 +53,38 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+// Same as readBody, but with a much larger cap — voice recordings arrive as
+// base64 JSON, so a ~1-2 minute clip can legitimately be a few MB, well past
+// readBody's 1MB guard (which stays tight for every other, tiny, endpoint).
+function readBodyLimited(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on('data', chunk => {
+      total += chunk.length;
+      if (total > maxBytes) { req.destroy(); reject(new Error('payload_too_large')); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const data = Buffer.concat(chunks).toString('utf8');
+      if (!data) return resolve({});
+      try { resolve(JSON.parse(data)); }
+      catch { reject(new Error('invalid_json')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendBinary(res, status, buffer, contentType) {
+  res.writeHead(status, {
+    'Content-Type': contentType,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS'
+  });
+  res.end(buffer);
 }
 
 async function requireAuth(req, res) {
@@ -483,6 +516,45 @@ route('POST', '/api/agent/pending/:id/reject', async (req, res, params) => {
 route('GET', '/api/agent/pending', async (req, res) => {
   const auth = await requireAuth(req, res); if (!auth) return;
   send(res, 200, await db.all(`SELECT * FROM events WHERE tenant_id = ? AND status = 'pending_approval' ORDER BY created_at DESC`, [auth.tenantId]));
+});
+
+// ---- voice (web ChatPanel mic/TTS — same OpenAI account as Telegram voice) ----
+route('POST', '/api/voice/transcribe', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  if (!voice.voiceEnabled()) {
+    return send(res, 501, { error: 'voice_not_configured', message: 'قابلیت صوتی روی این سرور فعال نشده (OPENAI_VOICE_API_KEY تنظیم نشده).' });
+  }
+  let body;
+  try {
+    body = await readBodyLimited(req, 8 * 1024 * 1024);
+  } catch (e) {
+    return send(res, e.message === 'payload_too_large' ? 413 : 400, { error: e.message });
+  }
+  const { audioBase64, mimeType } = body;
+  if (!audioBase64) return send(res, 400, { error: 'audio_required' });
+  try {
+    const buffer = Buffer.from(audioBase64, 'base64');
+    const text = await voice.transcribeAudio(buffer, 'voice.webm', mimeType || 'audio/webm');
+    send(res, 200, { text });
+  } catch (e) {
+    console.error('[voice/transcribe]', e);
+    send(res, 502, { error: 'voice_gateway_error', message: e.message });
+  }
+});
+route('POST', '/api/voice/speak', async (req, res) => {
+  const auth = await requireAuth(req, res); if (!auth) return;
+  if (!voice.voiceEnabled()) {
+    return send(res, 501, { error: 'voice_not_configured', message: 'قابلیت صوتی روی این سرور فعال نشده (OPENAI_VOICE_API_KEY تنظیم نشده).' });
+  }
+  const { text } = await readBody(req);
+  if (!text || !text.trim()) return send(res, 400, { error: 'text_required' });
+  try {
+    const audio = await voice.synthesizeSpeech(text.trim(), 'mp3');
+    sendBinary(res, 200, audio, 'audio/mpeg');
+  } catch (e) {
+    console.error('[voice/speak]', e);
+    send(res, 502, { error: 'voice_gateway_error', message: e.message });
+  }
 });
 
 // ---- billing (tenant-scoped) ----

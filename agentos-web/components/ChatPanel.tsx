@@ -197,9 +197,12 @@ export default function ChatPanel() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [voiceOut, setVoiceOut] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const recognizerRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   // Restore any saved conversation on mount so switching tabs (which
   // unmounts this component in the App Router) doesn't wipe the chat. Keyed
@@ -242,36 +245,87 @@ export default function ChatPanel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
-  function speak(text: string) {
-    if (!voiceOut || typeof window === 'undefined' || !window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'fa-IR';
-    window.speechSynthesis.speak(u);
+  // Real AI voice, not the browser's built-in speechSynthesis/SpeechRecognition
+  // (crude quality, weak Persian support) — both legs go through the
+  // backend's /api/voice/* routes, which call OpenAI's own audio endpoints
+  // with a separate direct API key (see CLAUDE.md).
+  async function speak(text: string) {
+    if (!voiceOut || !text) return;
+    try {
+      const res = await fetch('/api/proxy/voice/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return; // voice not configured / gateway error — text reply already shown, don't interrupt
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        URL.revokeObjectURL(audioPlayerRef.current.src);
+      }
+      const audio = new Audio(url);
+      audioPlayerRef.current = audio;
+      audio.play().catch(() => {});
+    } catch {
+      /* playback is a nice-to-have — never block on it */
+    }
   }
 
-  function toggleVoiceInput() {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      alert('مرورگر شما از ورودی صوتی پشتیبانی نمی‌کنه. Chrome رو امتحان کن.');
-      return;
+  function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(((reader.result as string) || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function transcribeAndSend(blob: Blob, mimeType: string) {
+    setTranscribing(true);
+    try {
+      const audioBase64 = await blobToBase64(blob);
+      const { text } = await api('voice/transcribe', {
+        method: 'POST',
+        body: JSON.stringify({ audioBase64, mimeType }),
+      });
+      if (text && text.trim()) await handleSend(text.trim());
+    } catch (e: any) {
+      alert('خطا در تشخیص گفتار: ' + e.message);
+    } finally {
+      setTranscribing(false);
     }
+  }
+
+  async function toggleVoiceInput() {
     if (listening) {
-      recognizerRef.current?.stop();
+      mediaRecorderRef.current?.stop();
       return;
     }
-    const recognizer = new SR();
-    recognizer.lang = 'fa-IR';
-    recognizer.interimResults = false;
-    recognizer.onstart = () => setListening(true);
-    recognizer.onend = () => setListening(false);
-    recognizer.onerror = () => setListening(false);
-    recognizer.onresult = (e: any) => {
-      const text = e.results[0][0].transcript;
-      setInput(text);
-      handleSend(text);
-    };
-    recognizerRef.current = recognizer;
-    recognizer.start();
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('مرورگر شما از ضبط صدا پشتیبانی نمی‌کنه.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setListening(false);
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        transcribeAndSend(blob, mimeType);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setListening(true);
+    } catch {
+      alert('اجازه دسترسی به میکروفون داده نشد.');
+    }
   }
 
   async function handleSend(overrideText?: string) {
@@ -392,11 +446,12 @@ export default function ChatPanel() {
         <div className="flex gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-1.5">
           <button
             onClick={toggleVoiceInput}
+            disabled={transcribing}
             className={`w-9 h-9 rounded-lg border border-[var(--border)] flex items-center justify-center shrink-0 ${
               listening ? 'bg-[var(--danger-soft)] text-[var(--danger)] animate-pulse' : 'bg-[var(--surface-3)]'
-            }`}
+            } ${transcribing ? 'opacity-60' : ''}`}
           >
-            🎙️
+            {transcribing ? '⏳' : '🎙️'}
           </button>
           <input
             value={input}

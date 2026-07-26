@@ -30,6 +30,7 @@ const https = require('node:https');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { db, now } = require('./db');
 const { act, resolvePending } = require('./agent');
+const voice = require('./voice');
 
 const POLL_TIMEOUT_S = 30;
 const LINK_CODE_TTL_MS = 10 * 60 * 1000;
@@ -115,6 +116,95 @@ async function callTelegram(method, params) {
   return data;
 }
 
+// Raw (non-JSON) request over the same proxy-aware https.request path as
+// requestViaAgent, for binary bodies/responses (file downloads, multipart
+// uploads) that a JSON POST can't express. GET when no body is given.
+function requestRaw(urlStr, { headers = {}, body, agent } = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const req = https.request({
+      hostname: url.hostname,
+      servername: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: body ? 'POST' : 'GET',
+      agent,
+      headers,
+      timeout: 35_000,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('timeout', () => req.destroy(new Error('telegram request timed out')));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// Downloads a file Telegram is hosting (voice note, photo, ...) given the
+// file_path returned by getFile. This hits api.telegram.org's /file/ path —
+// the same host as every other call, so it needs the same SOCKS proxy
+// routing when TELEGRAM_SOCKS_PROXY is set (the DNS hijack applies here too).
+async function downloadFile(filePath) {
+  const base = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org';
+  const url = `${base}/file/bot${botToken()}/${filePath}`;
+  const agent = getProxyAgent();
+  if (agent) {
+    const { body } = await requestRaw(url, { agent });
+    return body;
+  }
+  const res = await fetch(url);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function buildMultipartBody(fields, filePart) {
+  const boundary = '----AgentOSBoundary' + Math.random().toString(16).slice(2);
+  const parts = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null) continue;
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`));
+  }
+  if (filePart) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${filePart.field}"; filename="${filePart.filename}"\r\nContent-Type: ${filePart.mimeType}\r\n\r\n`
+    ));
+    parts.push(filePart.buffer);
+    parts.push(Buffer.from('\r\n'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  return { boundary, body: Buffer.concat(parts) };
+}
+
+// Multipart POST, for endpoints that upload a file (sendVoice, sendAudio,
+// ...) rather than send JSON — mirrors callTelegram()'s proxy/no-proxy split.
+async function callTelegramFile(method, fields, filePart) {
+  const url = apiUrl(method);
+  const { boundary, body } = buildMultipartBody(fields, filePart);
+  const headers = { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': body.length };
+  const agent = getProxyAgent();
+  let data;
+  if (agent) {
+    const raw = await requestRaw(url, { headers, body, agent });
+    try { data = JSON.parse(raw.body.toString('utf8')); } catch { data = null; }
+  } else {
+    const res = await fetch(url, { method: 'POST', headers, body });
+    data = await res.json().catch(() => null);
+  }
+  if (!data || !data.ok) console.error(`[telegram] ${method} (file) failed:`, data);
+  return data;
+}
+
+// Telegram's "voice message" bubble (round, with waveform) strictly requires
+// an OGG container with the Opus codec — anything else has to go through
+// sendAudio instead (shown as a plain audio file). synthesizeSpeech(text,
+// 'opus') is asked to produce that format for this reason.
+async function sendVoice(chatId, buffer) {
+  return callTelegramFile('sendVoice', { chat_id: chatId },
+    { field: 'voice', filename: 'reply.ogg', mimeType: 'audio/ogg', buffer });
+}
+
 async function sendMessage(chatId, text, extra) {
   return callTelegram('sendMessage', { chat_id: chatId, text, ...extra });
 }
@@ -176,32 +266,11 @@ function pushHistory(chatId, role, text) {
   chatHistory.set(chatId, h.slice(-8));
 }
 
-async function handleMessage(msg) {
-  const chatId = String(msg.chat.id);
-  const text = (msg.text || '').trim();
-  if (!text) return;
-
-  if (text.startsWith('/start')) {
-    const code = text.split(/\s+/)[1];
-    if (!code) {
-      await sendMessage(chatId, 'برای اتصال حساب، از صفحه «تنظیمات» توی AgentOS یک کد بگیر و همینجا بفرست: /start <کد>');
-      return;
-    }
-    const linked = await consumeLinkCode(code, chatId);
-    if (!linked) {
-      await sendMessage(chatId, 'این کد نامعتبر یا منقضی‌شده — یک کد جدید از تنظیمات بگیر.');
-      return;
-    }
-    await sendMessage(chatId, '✅ حساب شما به این Agent وصل شد. از همین‌جا هرچی تو چت AgentOS می‌نویسی رو بنویس.');
-    return;
-  }
-
-  const user = await db.get('SELECT id, tenant_id FROM users WHERE telegram_chat_id = ?', [chatId]);
-  if (!user) {
-    await sendMessage(chatId, 'این چت هنوز به هیچ حساب AgentOS وصل نیست. از «تنظیمات» یک کد بگیر و بفرست: /start <کد>');
-    return;
-  }
-
+// Shared by both the plain-text and voice-note paths below: run the
+// transcribed/typed text through the exact same act() pipeline the web
+// ChatPanel uses (approval gate included), then reply — as a voice message
+// if the incoming message was itself voice, otherwise as text.
+async function respondToUser(chatId, user, text, { asVoice } = {}) {
   pushHistory(chatId, 'user', text);
   try {
     const result = await act(user.tenant_id, user.id, text, chatHistory.get(chatId) || []);
@@ -217,11 +286,74 @@ async function handleMessage(msg) {
       return;
     }
     pushHistory(chatId, 'agent', result.reply || '');
-    await sendMessage(chatId, result.reply || 'انجام شد.');
+    const replyText = result.reply || 'انجام شد.';
+    if (asVoice && voice.voiceEnabled()) {
+      try {
+        const audio = await voice.synthesizeSpeech(replyText, 'opus');
+        await sendVoice(chatId, audio);
+        return;
+      } catch (e) {
+        // TTS failing shouldn't swallow the answer — fall back to text below.
+        console.error('[telegram tts]', e);
+      }
+    }
+    await sendMessage(chatId, replyText);
   } catch (e) {
     console.error('[telegram act]', e);
     await sendMessage(chatId, 'خطا در پردازش پیام: ' + e.message);
   }
+}
+
+async function handleMessage(msg) {
+  const chatId = String(msg.chat.id);
+  const text = (msg.text || '').trim();
+
+  if (text.startsWith('/start')) {
+    const code = text.split(/\s+/)[1];
+    if (!code) {
+      await sendMessage(chatId, 'برای اتصال حساب، از صفحه «تنظیمات» توی AgentOS یک کد بگیر و همینجا بفرست: /start <کد>');
+      return;
+    }
+    const linked = await consumeLinkCode(code, chatId);
+    if (!linked) {
+      await sendMessage(chatId, 'این کد نامعتبر یا منقضی‌شده — یک کد جدید از تنظیمات بگیر.');
+      return;
+    }
+    await sendMessage(chatId, '✅ حساب شما به این Agent وصل شد. از همین‌جا هرچی تو چت AgentOS می‌نویسی رو بنویس، یا برام وویس بفرست.');
+    return;
+  }
+
+  if (!text && !msg.voice) return;
+
+  const user = await db.get('SELECT id, tenant_id FROM users WHERE telegram_chat_id = ?', [chatId]);
+  if (!user) {
+    await sendMessage(chatId, 'این چت هنوز به هیچ حساب AgentOS وصل نیست. از «تنظیمات» یک کد بگیر و بفرست: /start <کد>');
+    return;
+  }
+
+  if (msg.voice) {
+    if (!voice.voiceEnabled()) {
+      await sendMessage(chatId, 'قابلیت صوتی هنوز روی این سرور فعال نشده.');
+      return;
+    }
+    try {
+      const fileInfo = await callTelegram('getFile', { file_id: msg.voice.file_id });
+      if (!fileInfo || !fileInfo.ok) throw new Error('getFile failed');
+      const buffer = await downloadFile(fileInfo.result.file_path);
+      const transcript = await voice.transcribeAudio(buffer, 'voice.ogg', 'audio/ogg');
+      if (!transcript) {
+        await sendMessage(chatId, 'صدا رو متوجه نشدم، می‌شه دوباره امتحان کنی؟');
+        return;
+      }
+      await respondToUser(chatId, user, transcript, { asVoice: true });
+    } catch (e) {
+      console.error('[telegram voice]', e);
+      await sendMessage(chatId, 'خطا در پردازش پیام صوتی: ' + e.message);
+    }
+    return;
+  }
+
+  await respondToUser(chatId, user, text, { asVoice: false });
 }
 
 async function handleCallbackQuery(cq) {
@@ -282,6 +414,7 @@ module.exports = {
   startPolling, stopPolling, pollOnce,
   createLinkCode, unlink, getBotUsername,
   sendMessage, handleMessage, handleCallbackQuery,
+  sendVoice, downloadFile,
   // exported for test/telegram-proxy.test.js only
   requestViaAgent, getProxyAgent,
 };

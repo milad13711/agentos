@@ -29,6 +29,13 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - AI_PROVIDER=${AI_PROVIDER:-}
+      # Voice (STT/TTS) — a separate, real, direct OpenAI key from
+      # OPENAI_API_KEY above (that one's usually GapGPT). Empty = voice off.
+      - OPENAI_VOICE_API_KEY=${OPENAI_VOICE_API_KEY:-}
+      - OPENAI_VOICE_BASE_URL=${OPENAI_VOICE_BASE_URL:-}
+      - OPENAI_STT_MODEL=${OPENAI_STT_MODEL:-}
+      - OPENAI_TTS_MODEL=${OPENAI_TTS_MODEL:-}
+      - OPENAI_TTS_VOICE=${OPENAI_TTS_VOICE:-}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Only needed if api.telegram.org is filtered from this server (it is,
